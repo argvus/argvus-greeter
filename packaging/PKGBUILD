@@ -1,0 +1,72 @@
+# Maintainer: William C. Canin
+pkgname=argvus-greeter
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Lightweight GTK4 greetd greeter for the Argvus desktop"
+arch=('x86_64')
+url="https://github.com/argvus/argvus-greeter"
+license=('GPL-3.0-only')
+options=('!debug')
+depends=(
+  'greetd'
+  'gtk4'
+  'argvus-appearance'
+  'argvus-session'
+  'hyprland'
+  'systemd-libs'
+)
+makedepends=(
+  'cargo'
+  'pkgconf'
+)
+backup=(
+  'etc/argvus/greeter.toml'
+  'etc/argvus/hyprland-argvus-greeter.conf'
+  'etc/argvus/hyprland-argvus-greeter.lua'
+)
+install="${pkgname}.install"
+source=(
+  "${pkgname}-${pkgver}.tar.gz::${url}/archive/refs/tags/v${pkgver}.tar.gz"
+)
+sha256sums=('SKIP')
+
+prepare() {
+  cd "${pkgname}-${pkgver}"
+  cargo fetch --locked --target "${CARCH}-unknown-linux-gnu"
+}
+
+build() {
+  cd "${pkgname}-${pkgver}"
+  cargo build --release --locked --target-dir target
+}
+
+check() {
+  cd "${pkgname}-${pkgver}"
+  cargo test --locked --target-dir target
+}
+
+package() {
+  cd "${pkgname}-${pkgver}"
+
+  install -Dm755 "target/release/${pkgname}" \
+    "${pkgdir}/usr/bin/${pkgname}"
+  install -Dm755 packaging/greetd/argvus-greeter-setup \
+    "${pkgdir}/usr/bin/argvus-greeter-setup"
+  install -Dm755 packaging/greetd/argvus-greeter-session \
+    "${pkgdir}/usr/bin/argvus-greeter-session"
+
+  install -Dm644 packaging/greetd/greeter.toml \
+    "${pkgdir}/etc/argvus/greeter.toml"
+  install -Dm644 packaging/greetd/hyprland-argvus-greeter.conf \
+    "${pkgdir}/etc/argvus/hyprland-argvus-greeter.conf"
+  install -Dm644 packaging/greetd/hyprland-argvus-greeter.lua \
+    "${pkgdir}/etc/argvus/hyprland-argvus-greeter.lua"
+
+  install -Dm644 packaging/greetd/config.toml \
+    "${pkgdir}/usr/share/doc/${pkgname}/greetd-config.toml"
+
+  install -Dm644 README.md \
+    "${pkgdir}/usr/share/doc/${pkgname}/README.md"
+  install -Dm644 LICENSE \
+    "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}

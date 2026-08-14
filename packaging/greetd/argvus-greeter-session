@@ -1,0 +1,76 @@
+#!/usr/bin/env sh
+# Launch the minimal Hyprland compositor used only by the greetd greeter.
+
+set -eu
+
+CONFIG="${ARGVUS_GREETER_HYPRLAND_CONFIG:-/etc/argvus/hyprland-argvus-greeter.lua}"
+
+resolve_home() {
+  case "${HOME:-}" in
+    ""|"/")
+      if command -v getent >/dev/null 2>&1; then
+        getent passwd "$(id -un)" | cut -d: -f6
+      fi
+    ;;
+    *)
+      printf '%s\n' "$HOME"
+    ;;
+  esac
+}
+
+resolve_state_dir() {
+  if [ -n "${XDG_STATE_HOME:-}" ]; then
+    _candidate="${XDG_STATE_HOME}/argvus-greeter"
+    if mkdir -p "$_candidate" 2>/dev/null; then
+      printf '%s\n' "$_candidate"
+      return 0
+    fi
+  fi
+
+  _home="$(resolve_home || true)"
+  if [ -n "$_home" ] && [ "$_home" != "/" ]; then
+    export HOME="$_home"
+    _candidate="${_home}/.local/state/argvus-greeter"
+    if mkdir -p "$_candidate" 2>/dev/null; then
+      printf '%s\n' "$_candidate"
+      return 0
+    fi
+  fi
+
+  if [ -n "${XDG_RUNTIME_DIR:-}" ]; then
+    _candidate="${XDG_RUNTIME_DIR}/argvus-greeter"
+    if mkdir -p "$_candidate" 2>/dev/null; then
+      printf '%s\n' "$_candidate"
+      return 0
+    fi
+  fi
+
+  _fallback="/tmp/argvus-greeter-$(id -u)"
+  mkdir -p "$_fallback"
+  chmod 700 "$_fallback" 2>/dev/null || true
+  printf '%s\n' "$_fallback"
+}
+
+STATE_DIR="$(resolve_state_dir)"
+LOG="$STATE_DIR/session.log"
+
+# Clear the active login VT before the graphical greeter takes over so boot or
+# service output does not remain visible under the first frame.
+if [ -w /dev/tty1 ]; then
+  printf '\033c' >/dev/tty1 2>/dev/null || true
+fi
+
+if command -v start-hyprland >/dev/null 2>&1; then
+  exec start-hyprland -- --config "$CONFIG" >> "$LOG" 2>&1
+fi
+
+if command -v Hyprland >/dev/null 2>&1; then
+  exec Hyprland --config "$CONFIG" >> "$LOG" 2>&1
+fi
+
+if command -v hyprland >/dev/null 2>&1; then
+  exec hyprland --config "$CONFIG" >> "$LOG" 2>&1
+fi
+
+printf '%s\n' "argvus-greeter-session: Hyprland executable not found." >> "$LOG"
+exit 127

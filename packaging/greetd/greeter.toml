@@ -1,0 +1,7 @@
+[appearance]
+wallpaper = "/usr/share/backgrounds/argvus/default.png"
+show_clock = true
+show_date = true
+
+[session]
+default = "argvus"

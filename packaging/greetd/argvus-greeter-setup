@@ -1,0 +1,72 @@
+#!/usr/bin/env sh
+
+set -eu
+
+SOURCE_CONFIG="/usr/share/doc/argvus-greeter/greetd-config.toml"
+TARGET_CONFIG="/etc/greetd/config.toml"
+BACKUP_SUFFIX="$(date +%Y%m%d%H%M%S)"
+ENABLE=false
+START=false
+
+usage() {
+  cat <<'EOF'
+Usage: argvus-greeter-setup [--enable] [--now] [--help]
+
+Installs the Argvus greetd configuration at /etc/greetd/config.toml.
+
+Options:
+  --enable  enable greetd.service after writing the config
+  --now     enable and start greetd.service after writing the config
+  --help    show this help
+EOF
+}
+
+die() {
+  printf 'argvus-greeter-setup: %s\n' "$*" >&2
+  exit 1
+}
+
+need_root() {
+  [ "$(id -u)" -eq 0 ] || die "run as root"
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --enable)
+      ENABLE=true
+      shift
+    ;;
+    --now)
+      ENABLE=true
+      START=true
+      shift
+    ;;
+    -h|--help)
+      usage
+      exit 0
+    ;;
+    *)
+      die "unknown argument: $1"
+    ;;
+  esac
+done
+
+need_root
+[ -f "$SOURCE_CONFIG" ] || die "missing packaged config: $SOURCE_CONFIG"
+
+if [ -f "$TARGET_CONFIG" ] && ! cmp -s "$SOURCE_CONFIG" "$TARGET_CONFIG"; then
+  backup="${TARGET_CONFIG}.bak-${BACKUP_SUFFIX}"
+  cp "$TARGET_CONFIG" "$backup"
+  printf 'Backed up existing greetd config: %s\n' "$backup"
+fi
+
+install -Dm644 "$SOURCE_CONFIG" "$TARGET_CONFIG"
+printf 'Installed Argvus greetd config: %s\n' "$TARGET_CONFIG"
+
+if [ "$ENABLE" = true ]; then
+  systemctl enable greetd.service
+fi
+
+if [ "$START" = true ]; then
+  systemctl restart greetd.service
+fi
