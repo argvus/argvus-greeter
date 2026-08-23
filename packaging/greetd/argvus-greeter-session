@@ -5,61 +5,57 @@ set -eu
 
 CONFIG="${ARGVUS_GREETER_HYPRLAND_CONFIG:-/etc/argvus/hyprland-argvus-greeter.lua}"
 
-resolve_home() {
-  case "${HOME:-}" in
-    ""|"/")
-      if command -v getent >/dev/null 2>&1; then
-        getent passwd "$(id -un)" | cut -d: -f6
-      fi
-    ;;
-    *)
-      printf '%s\n' "$HOME"
-    ;;
-  esac
-}
-
-resolve_state_dir() {
-  if [ -n "${XDG_STATE_HOME:-}" ]; then
-    _candidate="${XDG_STATE_HOME}/argvus-greeter"
-    if mkdir -p "$_candidate" 2>/dev/null; then
-      printf '%s\n' "$_candidate"
-      return 0
-    fi
-  fi
-
-  _home="$(resolve_home || true)"
-  if [ -n "$_home" ] && [ "$_home" != "/" ]; then
-    export HOME="$_home"
-    _candidate="${_home}/.local/state/argvus-greeter"
-    if mkdir -p "$_candidate" 2>/dev/null; then
-      printf '%s\n' "$_candidate"
-      return 0
-    fi
-  fi
-
+# greetd may provide "/" as HOME for the greeter user.
+# GTK/GSettings and other desktop components require a writable HOME.
+if [ "${HOME:-}" = "/" ] || [ -z "${HOME:-}" ]; then
   if [ -n "${XDG_RUNTIME_DIR:-}" ]; then
-    _candidate="${XDG_RUNTIME_DIR}/argvus-greeter"
-    if mkdir -p "$_candidate" 2>/dev/null; then
-      printf '%s\n' "$_candidate"
-      return 0
-    fi
+    HOME="${XDG_RUNTIME_DIR}/argvus-greeter/home"
+  else
+    HOME="/tmp/argvus-greeter-$(id -u)/home"
   fi
 
-  _fallback="/tmp/argvus-greeter-$(id -u)"
-  mkdir -p "$_fallback"
-  chmod 700 "$_fallback" 2>/dev/null || true
-  printf '%s\n' "$_fallback"
-}
+  export HOME
+fi
 
-STATE_DIR="$(resolve_state_dir)"
+# Create a private writable HOME for the greeter.
+mkdir -p "$HOME"
+chmod 700 "$HOME" 2>/dev/null || true
+
+# Desktop/XDG environment for the greeter.
+export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
+export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+export XDG_STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
+
+mkdir -p \
+  "$XDG_CONFIG_HOME" \
+  "$XDG_CACHE_HOME" \
+  "$XDG_DATA_HOME" \
+  "$XDG_STATE_HOME"
+
+export XDG_CURRENT_DESKTOP="${XDG_CURRENT_DESKTOP:-Hyprland}"
+export XDG_SESSION_DESKTOP="${XDG_SESSION_DESKTOP:-argvus-greeter}"
+export XDG_SESSION_TYPE="wayland"
+export GDK_BACKEND="${GDK_BACKEND:-wayland}"
+
+# Keep greeter state/logs in the runtime directory.
+if [ -n "${XDG_RUNTIME_DIR:-}" ]; then
+  STATE_DIR="${XDG_RUNTIME_DIR}/argvus-greeter"
+else
+  STATE_DIR="${XDG_STATE_HOME}/argvus-greeter"
+fi
+
+mkdir -p "$STATE_DIR"
+chmod 700 "$STATE_DIR" 2>/dev/null || true
+
 LOG="$STATE_DIR/session.log"
 
-# Clear the active login VT before the graphical greeter takes over so boot or
-# service output does not remain visible under the first frame.
+# Clear the active login VT before the graphical greeter takes over.
 if [ -w /dev/tty1 ]; then
   printf '\033c' >/dev/tty1 2>/dev/null || true
 fi
 
+# Start the minimal Hyprland compositor.
 if command -v start-hyprland >/dev/null 2>&1; then
   exec start-hyprland -- --config "$CONFIG" >> "$LOG" 2>&1
 fi
@@ -72,5 +68,7 @@ if command -v hyprland >/dev/null 2>&1; then
   exec hyprland --config "$CONFIG" >> "$LOG" 2>&1
 fi
 
-printf '%s\n' "argvus-greeter-session: Hyprland executable not found." >> "$LOG"
+printf '%s\n' \
+  "argvus-greeter-session: Hyprland executable not found." >> "$LOG"
+
 exit 127
