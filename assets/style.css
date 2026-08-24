@@ -36,8 +36,8 @@ window {
 }
 
 .avatar {
-  min-width: 46px;
-  min-height: 46px;
+  min-width: 120px;
+  min-height: 120px;
   border-radius: 12px;
   overflow: hidden;
   background: rgba(53, 144, 189, 0.12);

@@ -15,6 +15,7 @@ use std::{
 };
 
 const DEFAULT_AVATAR: &[u8] = include_bytes!("../../assets/avatar-default.svg");
+const AVATAR_SIZE_PX: i32 = 120;
 
 pub struct LoginView {
     window: gtk::ApplicationWindow,
@@ -71,7 +72,7 @@ struct Widgets {
     window: gtk::ApplicationWindow,
     user_dropdown: gtk::DropDown,
     session_dropdown: gtk::DropDown,
-    avatar: gtk::Picture,
+    avatar: gtk::Image,
     default_avatar: Option<gdk::Texture>,
     display_name: gtk::Label,
     prompt_label: gtk::Label,
@@ -136,9 +137,8 @@ impl Widgets {
         form.add_css_class("login-panel");
         center.set_center_widget(Some(&form));
 
-        let avatar = gtk::Picture::new();
-        avatar.set_size_request(96, 96);
-        avatar.set_content_fit(gtk::ContentFit::Cover);
+        let avatar = gtk::Image::new();
+        avatar.set_pixel_size(AVATAR_SIZE_PX);
         avatar.set_halign(gtk::Align::Center);
         avatar.add_css_class("avatar");
         form.append(&avatar);
