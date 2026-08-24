@@ -55,6 +55,36 @@ if [ -w /dev/tty1 ]; then
   printf '\033c' >/dev/tty1 2>/dev/null || true
 fi
 
+# Detect virtual machines.
+#
+# The greeter uses software OpenGL in virtual machines because accelerated
+# OpenGL may be unreliable for GTK4/GSK rendering in the guest environment.
+#
+# Containers are intentionally excluded: systemd-detect-virt also detects
+# containers, but they are not the target of this workaround.
+is_virtual_machine() {
+  command -v systemd-detect-virt >/dev/null 2>&1 || return 1
+
+  case "$(systemd-detect-virt 2>/dev/null || true)" in
+    oracle|kvm|qemu|vmware|microsoft|xen|parallels|bhyve)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+if is_virtual_machine; then
+  VIRT="$(systemd-detect-virt 2>/dev/null || true)"
+
+  export LIBGL_ALWAYS_SOFTWARE=1
+
+  printf '%s\n' \
+    "argvus-greeter-session: virtual machine detected (${VIRT}); using software OpenGL." \
+    >> "$LOG"
+fi
+
 # Start the minimal Hyprland compositor.
 if command -v start-hyprland >/dev/null 2>&1; then
   exec start-hyprland -- --config "$CONFIG" >> "$LOG" 2>&1
