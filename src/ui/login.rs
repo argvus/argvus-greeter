@@ -5,7 +5,8 @@ use crate::{
     session::Session,
     users::User,
 };
-use gtk::{gdk, glib, prelude::*};
+use gtk::gdk_pixbuf::Pixbuf;
+use gtk::{gdk, gio, glib, prelude::*};
 use std::{
     cell::{Cell, RefCell},
     path::Path,
@@ -15,7 +16,11 @@ use std::{
 };
 
 const DEFAULT_AVATAR: &[u8] = include_bytes!("../../assets/avatar-default.svg");
-const AVATAR_SIZE_PX: i32 = 120;
+const AVATAR_SIZE_PX: i32 = 64;
+const AVATAR_IMAGE_SIZE_PX: i32 = 58;
+// Textures are decoded at this multiple of the display size so the avatar
+// still looks sharp on HiDPI screens after being scaled down.
+const AVATAR_SUPERSAMPLE: i32 = 2;
 
 pub struct LoginView {
     window: gtk::ApplicationWindow,
@@ -72,7 +77,7 @@ struct Widgets {
     window: gtk::ApplicationWindow,
     user_dropdown: gtk::DropDown,
     session_dropdown: gtk::DropDown,
-    avatar: gtk::Image,
+    avatar: gtk::Picture,
     default_avatar: Option<gdk::Texture>,
     display_name: gtk::Label,
     prompt_label: gtk::Label,
@@ -137,11 +142,28 @@ impl Widgets {
         form.add_css_class("login-panel");
         center.set_center_widget(Some(&form));
 
-        let avatar = gtk::Image::new();
-        avatar.set_pixel_size(AVATAR_SIZE_PX);
+        let avatar_frame = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        avatar_frame.set_size_request(AVATAR_SIZE_PX, AVATAR_SIZE_PX);
+        avatar_frame.set_hexpand(false);
+        avatar_frame.set_vexpand(false);
+        avatar_frame.set_halign(gtk::Align::Center);
+        avatar_frame.set_valign(gtk::Align::Center);
+        avatar_frame.set_overflow(gtk::Overflow::Hidden);
+        avatar_frame.add_css_class("avatar-frame");
+
+        let avatar = gtk::Picture::new();
+        avatar.set_size_request(AVATAR_IMAGE_SIZE_PX, AVATAR_IMAGE_SIZE_PX);
+        avatar.set_content_fit(gtk::ContentFit::Cover);
+        avatar.set_hexpand(false);
+        avatar.set_vexpand(false);
+        avatar.set_can_shrink(true);
         avatar.set_halign(gtk::Align::Center);
-        avatar.add_css_class("avatar");
-        form.append(&avatar);
+        avatar.set_valign(gtk::Align::Center);
+        avatar.set_overflow(gtk::Overflow::Hidden);
+        avatar.add_css_class("avatar-picture");
+
+        avatar_frame.append(&avatar);
+        form.append(&avatar_frame);
         let default_avatar = load_default_avatar();
 
         let display_name = gtk::Label::new(None);
@@ -450,12 +472,28 @@ fn apply_avatar(widgets: &Widgets, path: Option<&Path>) {
         widgets.avatar.set_paintable(Some(&texture));
     } else {
         widgets.avatar.add_css_class("avatar-fallback");
+        widgets.avatar.set_paintable(None::<&gdk::Texture>);
     }
 }
 
+// NOTE: avatar images are decoded straight to `AVATAR_IMAGE_SIZE_PX` (times
+// `AVATAR_SUPERSAMPLE`) instead of loading the file at full resolution and
+// relying on GtkPicture/CSS to shrink it. GtkPicture's `width-request` /
+// `height-request` (and the CSS `min-width` / `min-height` we set on
+// `.avatar-picture`) only raise the *minimum* size GTK will lay it out at —
+// they never cap the *natural* size, which GtkPicture derives from the
+// paintable's intrinsic pixel size. Since the login panel always has room to
+// spare, GTK grants the picture its natural size, so a full-resolution photo
+// (or the 256x256 default SVG) keeps rendering at its original size no
+// matter what the request/CSS says. Decoding at the target size fixes the
+// natural size at the source, so it actually shrinks.
 fn load_user_avatar(path: &Path) -> Option<gdk::Texture> {
-    match gdk::Texture::from_filename(path) {
-        Ok(texture) => Some(texture),
+    let target = AVATAR_IMAGE_SIZE_PX * AVATAR_SUPERSAMPLE;
+    // preserve_aspect_ratio=true: avoids squashing non-square photos. The
+    // `.avatar-picture`'s ContentFit::Cover still crops the result to a
+    // square, it just no longer has to downscale a full-resolution source.
+    match Pixbuf::from_file_at_scale(path, target, target, true) {
+        Ok(pixbuf) => Some(gdk::Texture::for_pixbuf(&pixbuf)),
         Err(error) => {
             tracing::warn!(%error, path = %path.display(), "user avatar could not be loaded");
             None
@@ -464,8 +502,10 @@ fn load_user_avatar(path: &Path) -> Option<gdk::Texture> {
 }
 
 fn load_default_avatar() -> Option<gdk::Texture> {
-    match gdk::Texture::from_bytes(&glib::Bytes::from_static(DEFAULT_AVATAR)) {
-        Ok(texture) => Some(texture),
+    let target = AVATAR_IMAGE_SIZE_PX * AVATAR_SUPERSAMPLE;
+    let stream = gio::MemoryInputStream::from_bytes(&glib::Bytes::from_static(DEFAULT_AVATAR));
+    match Pixbuf::from_stream_at_scale(&stream, target, target, true, gio::Cancellable::NONE) {
+        Ok(pixbuf) => Some(gdk::Texture::for_pixbuf(&pixbuf)),
         Err(error) => {
             tracing::warn!(%error, "default avatar asset could not be decoded");
             None

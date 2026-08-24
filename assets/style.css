@@ -35,16 +35,23 @@ window {
   box-shadow: 0 18px 60px rgba(0, 0, 0, 0.34);
 }
 
-.avatar {
-  min-width: 120px;
-  min-height: 120px;
-  border-radius: 12px;
+.avatar-frame {
+  min-width: 64px;
+  min-height: 64px;
+  border-radius: 6px;
   overflow: hidden;
   background: rgba(53, 144, 189, 0.12);
   border: 1px solid rgba(53, 144, 189, 0.28);
 }
 
-.avatar-fallback {
+.avatar-picture {
+  min-width: 58px;
+  min-height: 58px;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.avatar-picture.avatar-fallback {
   background: rgba(53, 144, 189, 0.18);
 }
 
