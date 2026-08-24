@@ -39,13 +39,13 @@ window {
   min-width: 96px;
   min-height: 96px;
   border-radius: 12px;
+  overflow: hidden;
   background: rgba(53, 144, 189, 0.12);
   border: 1px solid rgba(53, 144, 189, 0.28);
 }
 
 .avatar-fallback {
-  /* background-image: image(rgba(53, 144, 189, 0.18));*/
-	background: rgba(53, 144, 189, 0.18);
+  background: rgba(53, 144, 189, 0.18);
 }
 
 .display-name {

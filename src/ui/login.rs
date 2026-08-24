@@ -5,7 +5,7 @@ use crate::{
     session::Session,
     users::User,
 };
-use gtk::{glib, prelude::*};
+use gtk::{gdk, glib, prelude::*};
 use std::{
     cell::{Cell, RefCell},
     path::Path,
@@ -13,6 +13,8 @@ use std::{
     sync::mpsc::{Receiver, Sender},
     time::Duration,
 };
+
+const DEFAULT_AVATAR: &[u8] = include_bytes!("../../assets/avatar-default.svg");
 
 pub struct LoginView {
     window: gtk::ApplicationWindow,
@@ -70,6 +72,7 @@ struct Widgets {
     user_dropdown: gtk::DropDown,
     session_dropdown: gtk::DropDown,
     avatar: gtk::Picture,
+    default_avatar: Option<gdk::Texture>,
     display_name: gtk::Label,
     prompt_label: gtk::Label,
     auth_entry: gtk::Entry,
@@ -139,6 +142,7 @@ impl Widgets {
         avatar.set_halign(gtk::Align::Center);
         avatar.add_css_class("avatar");
         form.append(&avatar);
+        let default_avatar = load_default_avatar();
 
         let display_name = gtk::Label::new(None);
         display_name.add_css_class("display-name");
@@ -207,6 +211,7 @@ impl Widgets {
             user_dropdown,
             session_dropdown,
             avatar,
+            default_avatar,
             display_name,
             prompt_label,
             auth_entry,
@@ -427,16 +432,44 @@ fn selected_session<'a>(widgets: &Widgets, sessions: &'a [Session]) -> Option<&'
 fn update_selected_user(widgets: &Widgets, users: &[User]) {
     let Some(user) = selected_user(widgets, users) else {
         widgets.display_name.set_text("Argvus");
-        widgets.avatar.set_filename(Option::<&Path>::None);
+        apply_avatar(widgets, None);
         return;
     };
 
     widgets.display_name.set_text(&user.display_name);
-    if let Some(path) = &user.avatar {
-        widgets.avatar.set_filename(Some(path));
+    apply_avatar(widgets, user.avatar.as_deref());
+}
+
+fn apply_avatar(widgets: &Widgets, path: Option<&Path>) {
+    let texture = path
+        .and_then(load_user_avatar)
+        .or_else(|| widgets.default_avatar.clone());
+
+    if let Some(texture) = texture {
+        widgets.avatar.remove_css_class("avatar-fallback");
+        widgets.avatar.set_paintable(Some(&texture));
     } else {
-        widgets.avatar.set_filename(Option::<&Path>::None);
         widgets.avatar.add_css_class("avatar-fallback");
+    }
+}
+
+fn load_user_avatar(path: &Path) -> Option<gdk::Texture> {
+    match gdk::Texture::from_filename(path) {
+        Ok(texture) => Some(texture),
+        Err(error) => {
+            tracing::warn!(%error, path = %path.display(), "user avatar could not be loaded");
+            None
+        }
+    }
+}
+
+fn load_default_avatar() -> Option<gdk::Texture> {
+    match gdk::Texture::from_bytes(&glib::Bytes::from_static(DEFAULT_AVATAR)) {
+        Ok(texture) => Some(texture),
+        Err(error) => {
+            tracing::warn!(%error, "default avatar asset could not be decoded");
+            None
+        }
     }
 }
 
