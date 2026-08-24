@@ -117,22 +117,45 @@ login screen.
 ### How it is resolved
 
 For each user discovered in `/etc/passwd`, Argvus Greeter resolves the avatar
-through [AccountsService](https://www.freedesktop.org/wiki/Software/AccountsService/)
 in this order:
 
-1. `/var/lib/AccountsService/icons/<username>`
-2. The `Icon=` path declared in `/var/lib/AccountsService/users/<username>`
+1. `$HOME/.face` — written and validated by
+   [`argvus-accounts`](https://github.com/argvus/argvus-accounts), the official
+   account-metadata source of the Argvus desktop (regular PNG file, 256x256,
+   mode `0644`, owned by the user);
+2. `/var/lib/AccountsService/icons/<username>` — freedesktop
+   [AccountsService](https://www.freedesktop.org/wiki/Software/AccountsService/)
+   convention, kept for interoperability with GNOME/KDE and other display
+   managers;
+3. The `Icon=` path declared in `/var/lib/AccountsService/users/<username>`.
 
-If neither source yields an existing, readable image file — or if the file
-cannot be decoded at render time (corrupted or unsupported format) — the
-built-in Argvus default avatar (`assets/avatar-default.svg`) is shown instead.
-No network access is ever performed and home directories are never consulted,
-so the greeter requires no extra permissions while running as the unprivileged
-`greeter` user.
+If none of these sources yields an existing, readable, regular image file —
+or if the file cannot be decoded at render time (corrupted or unsupported
+format) — the built-in Argvus default avatar (`assets/avatar-default.svg`) is
+shown instead. No network access is ever performed.
+
+Security details of the lookup:
+
+- `.face` is checked with `lstat`: only real regular files qualify and
+  symlinks are never followed, so a stale or hostile link cannot redirect
+  the greeter to arbitrary paths;
+- usernames are sanitized before being used in any path construction;
+- reading `$HOME/.face` requires the user's home directory to be traversable
+  by the `greeter` user (the Arch Linux default is `0755`). Hardened setups
+  that restrict home directories should relax traversal for the greeter or
+  keep using the AccountsService locations.
 
 ### Setting an avatar for a user
 
-Copy an image into the AccountsService icons directory as the administrator:
+The preferred way inside Argvus is the account manager:
+
+```sh
+argvus-accounts self avatar ~/Pictures/avatar.png   # own avatar, no privileges
+sudo argvus-accounts avatar alice photo.png         # another user, admin
+```
+
+As an administrator, the AccountsService locations also work and stay
+compatible with other desktop environments:
 
 ```sh
 sudo install -Dm644 photo.png /var/lib/AccountsService/icons/alice
@@ -162,7 +185,8 @@ changes:
 - users without a photo always receive the Argvus default avatar.
 
 The login screen is strictly read-only with respect to avatars: there is no
-button, menu, or flow to upload, choose, or remove them.
+button, menu, or flow to upload, choose, or remove them. Avatar lifecycle
+(set, replace, remove) belongs exclusively to `argvus-accounts`.
 
 ## Development
 

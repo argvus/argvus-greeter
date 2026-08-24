@@ -7,6 +7,8 @@ use std::{
 const PASSWD_PATH: &str = "/etc/passwd";
 const MIN_LOGIN_UID: u32 = 1000;
 const ACCOUNTS_SERVICE_DIR: &str = "/var/lib/AccountsService";
+/// Avatar file managed by `argvus-accounts` inside the user's home directory.
+const FACE_FILENAME: &str = ".face";
 
 #[derive(Debug, Clone)]
 pub struct User {
@@ -23,7 +25,7 @@ pub fn discover_users() -> anyhow::Result<Vec<User>> {
         .filter(is_login_user)
         .map(|entry| User {
             display_name: display_name(&entry),
-            avatar: avatar_for(&entry.username),
+            avatar: avatar_for(&entry),
             username: entry.username,
         })
         .collect::<Vec<_>>();
@@ -33,20 +35,50 @@ pub fn discover_users() -> anyhow::Result<Vec<User>> {
     Ok(users)
 }
 
-/// Returns the avatar image path registered in AccountsService for `username`.
+/// Returns the avatar image for an account.
 ///
-/// AccountsService stores per-account icons under `<accounts>/icons/<username>`
-/// and an optional custom `Icon=` path inside `<accounts>/users/<username>`.
-/// Paths that do not exist or cannot be read by the greeter user are treated
-/// as "no avatar"; home directories are never consulted so no extra
-/// permissions are required beyond reading `/var/lib/AccountsService`.
-pub fn avatar_for(username: &str) -> Option<PathBuf> {
-    avatar_in_accounts(Path::new(ACCOUNTS_SERVICE_DIR), username)
+/// Resolution order:
+///
+/// 1. `$HOME/.face` — the location written and validated by
+///    [`argvus-accounts`](https://github.com/argvus/argvus-accounts), the
+///    official account-metadata source of the Argvus desktop. The file is a
+///    regular, user-owned PNG (256x256, mode 0644) when deployed by that tool.
+/// 2. `/var/lib/AccountsService/icons/<username>` — freedesktop AccountsService
+///    convention, kept for interoperability with GNOME/KDE and other display
+///    managers.
+/// 3. The `Icon=` path declared in `/var/lib/AccountsService/users/<username>`.
+///
+/// Only existing files that are readable by the greeter user qualify.
+/// Symlinks are never followed (the check uses `lstat`), so a hostile or
+/// stale `.face` symlink cannot make the greeter read arbitrary paths.
+/// Only existing files that are readable by the greeter user qualify.
+/// Symlinks are never followed (the check uses `lstat`), so a hostile or
+/// stale `.face` symlink cannot make the greeter read arbitrary paths.
+fn avatar_for(entry: &PasswdEntry) -> Option<PathBuf> {
+    avatar_for_in(Path::new(ACCOUNTS_SERVICE_DIR), entry)
+}
+
+/// Same as [`avatar_for`] with an injectable AccountsService directory.
+fn avatar_for_in(accounts_dir: &Path, entry: &PasswdEntry) -> Option<PathBuf> {
+    let from_home = (!entry.home.as_os_str().is_empty())
+        .then(|| avatar_in_home(Path::new(&entry.home), &entry.username))
+        .flatten();
+    from_home.or_else(|| avatar_in_accounts(accounts_dir, &entry.username))
+}
+
+/// Resolves `$HOME/.face` for `username`, ignoring anything that is not a
+/// plain readable regular file.
+pub fn avatar_in_home(home: &Path, username: &str) -> Option<PathBuf> {
+    if !is_safe_username(username) {
+        return None;
+    }
+    let face = home.join(FACE_FILENAME);
+    is_regular_readable_file(&face).then_some(face)
 }
 
 fn avatar_in_accounts(accounts_dir: &Path, username: &str) -> Option<PathBuf> {
     let icon = accounts_dir.join("icons").join(username);
-    if is_readable_file(&icon) {
+    if is_regular_readable_file(&icon) {
         return Some(icon);
     }
 
@@ -57,12 +89,27 @@ fn avatar_in_accounts(accounts_dir: &Path, username: &str) -> Option<PathBuf> {
             .map(str::trim)
             .filter(|path| !path.is_empty())
             .map(PathBuf::from)
-            .filter(|path| is_readable_file(path))
+            .filter(|path| is_regular_readable_file(path))
     })
 }
 
-fn is_readable_file(path: &Path) -> bool {
-    path.is_file() && fs::File::open(path).is_ok()
+/// Defense-in-depth: usernames coming from `/etc/passwd` must be safe to use
+/// as a single path component before being joined into any directory.
+fn is_safe_username(username: &str) -> bool {
+    !username.is_empty()
+        && username.len() <= 32
+        && username != "."
+        && username != ".."
+        && !username.chars().any(|c| c == '/' || c.is_control())
+}
+
+fn is_regular_readable_file(path: &Path) -> bool {
+    // `symlink_metadata` does not follow symlinks; `is_file()` on its result
+    // is true only for real regular files.
+    path.symlink_metadata()
+        .map(|meta| meta.is_file())
+        .unwrap_or(false)
+        && fs::File::open(path).is_ok()
 }
 
 #[derive(Debug)]
@@ -70,6 +117,7 @@ struct PasswdEntry {
     username: String,
     gecos: String,
     uid: u32,
+    home: PathBuf,
     shell: String,
 }
 
@@ -83,6 +131,7 @@ fn parse_passwd_line(line: &str) -> Option<PasswdEntry> {
         username: fields[0].to_string(),
         uid: fields[2].parse().ok()?,
         gecos: fields[4].to_string(),
+        home: PathBuf::from(fields[5]),
         shell: fields[6].to_string(),
     })
 }
@@ -125,8 +174,22 @@ mod tests {
         dir
     }
 
+    fn temp_home_dir(label: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "argvus-greeter-home-{}-{}",
+            label,
+            std::process::id(),
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
     fn running_as_root() -> bool {
-        fs::metadata("/proc/self").map(|meta| meta.uid()).unwrap_or(0) == 0
+        fs::metadata("/proc/self")
+            .map(|meta| meta.uid())
+            .unwrap_or(0)
+            == 0
     }
 
     #[test]
@@ -161,7 +224,10 @@ mod tests {
         fs::write(&referenced, b"png-bytes").unwrap();
         fs::write(
             dir.join("users").join("bob"),
-            format!("[User]\nIcon={}\nSystemAccount=false\n", referenced.display()),
+            format!(
+                "[User]\nIcon={}\nSystemAccount=false\n",
+                referenced.display()
+            ),
         )
         .unwrap();
 
@@ -267,5 +333,130 @@ mod tests {
             avatar_in_accounts(&dir, "bob")
         );
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn face_file_in_home_is_resolved() {
+        let home = temp_home_dir("face-hit");
+        let face = home.join(FACE_FILENAME);
+        fs::write(&face, b"png-bytes").unwrap();
+
+        assert_eq!(avatar_in_home(&home, "alice"), Some(face));
+        fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
+    fn missing_face_file_returns_none() {
+        let home = temp_home_dir("face-missing");
+        assert_eq!(avatar_in_home(&home, "alice"), None);
+        fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
+    fn face_takes_priority_over_accounts_service() {
+        let accounts = temp_accounts_dir("face-priority");
+        let home = temp_home_dir("face-priority");
+        let icon = accounts.join("icons").join("alice");
+        fs::write(&icon, b"accounts-png").unwrap();
+        let face = home.join(FACE_FILENAME);
+        fs::write(&face, b"face-png").unwrap();
+
+        let entry = PasswdEntry {
+            username: "alice".to_string(),
+            gecos: String::new(),
+            uid: 1000,
+            home: home.clone(),
+            shell: "/bin/bash".to_string(),
+        };
+        assert_eq!(avatar_for_in(Path::new(&accounts), &entry), Some(face));
+        fs::remove_dir_all(accounts).unwrap();
+        fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
+    fn accounts_service_is_used_when_no_face_exists() {
+        let accounts = temp_accounts_dir("face-fallback");
+        let home = temp_home_dir("face-fallback");
+        let icon = accounts.join("icons").join("bob");
+        fs::write(&icon, b"accounts-png").unwrap();
+
+        let entry = PasswdEntry {
+            username: "bob".to_string(),
+            gecos: String::new(),
+            uid: 1001,
+            home: home.clone(),
+            shell: "/bin/bash".to_string(),
+        };
+        assert_eq!(avatar_for_in(Path::new(&accounts), &entry), Some(icon));
+        fs::remove_dir_all(accounts).unwrap();
+        fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
+    fn symlinked_face_file_is_ignored() {
+        let home = temp_home_dir("face-symlink");
+        let target = std::env::temp_dir().join(format!("face-target-{}", std::process::id()));
+        fs::write(&target, b"secret").unwrap();
+        std::os::unix::fs::symlink(&target, home.join(FACE_FILENAME)).unwrap();
+
+        assert_eq!(avatar_in_home(&home, "alice"), None);
+        fs::remove_dir_all(home).unwrap();
+        fs::remove_file(target).unwrap();
+    }
+
+    #[test]
+    fn directory_named_face_is_ignored() {
+        let home = temp_home_dir("face-dir");
+        fs::create_dir_all(home.join(FACE_FILENAME)).unwrap();
+
+        assert_eq!(avatar_in_home(&home, "alice"), None);
+        fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
+    fn unreadable_face_file_returns_none() {
+        if running_as_root() {
+            return;
+        }
+        let home = temp_home_dir("face-unreadable");
+        let face = home.join(FACE_FILENAME);
+        fs::write(&face, b"png-bytes").unwrap();
+        fs::set_permissions(&face, Permissions::from_mode(0o000)).unwrap();
+
+        assert_eq!(avatar_in_home(&home, "alice"), None);
+        let _ = fs::remove_dir_all(home);
+    }
+
+    #[test]
+    fn unsafe_usernames_never_reach_the_filesystem() {
+        let home = temp_home_dir("face-unsafe");
+        fs::write(home.join(FACE_FILENAME), b"png-bytes").unwrap();
+
+        for username in ["", "..", ".", "a/b", "traversal/../x"] {
+            assert_eq!(
+                avatar_in_home(&home, username),
+                None,
+                "username {username:?} must be rejected"
+            );
+        }
+        // Even with a `.face` present, nothing was read through a path join.
+        fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
+    fn empty_home_directory_field_still_falls_back_to_accounts_service() {
+        let accounts = temp_accounts_dir("empty-home-fallback");
+        let icon = accounts.join("icons").join("carol");
+        fs::write(&icon, b"accounts-png").unwrap();
+
+        let entry = PasswdEntry {
+            username: "carol".to_string(),
+            gecos: String::new(),
+            uid: 1002,
+            home: PathBuf::new(),
+            shell: "/bin/bash".to_string(),
+        };
+        assert_eq!(avatar_for_in(Path::new(&accounts), &entry), Some(icon));
+        fs::remove_dir_all(accounts).unwrap();
     }
 }
