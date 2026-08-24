@@ -26,6 +26,64 @@ cargo clippy --locked --all-targets --all-features -- -D warnings
 The greeter expects `GREETD_SOCK` to be set by greetd for real authentication.
 Without greetd it can still be compiled and inspected, but login cannot proceed.
 
+## Testing
+
+### Visual checks without greetd
+
+```sh
+GREETD_SOCK=/dev/null cargo run --release
+```
+
+This opens the greeter window inside the current desktop session. Everything
+visual can be verified this way: user discovery, avatars, session list, clock
+and CSS styling. Authentication cannot proceed because there is no real greetd
+socket; submit attempts only show an error in the status label.
+
+CSS and image assets are compiled into the binary (`include_str!` /
+`include_bytes!`), so visual changes always require rebuilding before they
+show up. User accounts and their avatars are discovered once at startup, so a
+photo changed under `/var/lib/AccountsService/icons/` is reflected by quitting
+and rerunning the command.
+
+### Full authentication flow with greetd on a spare VT
+
+A second greetd instance can run manually against a throwaway configuration,
+without rebooting, logging out or touching `/etc/greetd/config.toml`:
+
+```sh
+cat > /tmp/greetd-test.toml <<'EOF'
+[terminal]
+vt = 3
+
+[default_session]
+command = "argvus-greeter-session"
+user = "greeter"
+EOF
+
+sudo greetd --config /tmp/greetd-test.toml &
+echo $! # keep the PID to stop it later
+```
+
+Switch to the configured VT with `Ctrl+Alt+F3` and back with `Ctrl+Alt+F1`.
+This exercises the real greetd IPC path and PAM authentication; a successful
+login starts the chosen Wayland session on that VT while the desktop session
+stays untouched on its own VT. Stop the test instance afterwards:
+
+```sh
+sudo kill <PID>
+```
+
+Notes:
+
+- Pick a VT that is not in use; `sudo cat /sys/class/tty/tty0/active` shows
+  the active one.
+- `command = "argvus-greeter-session"` runs the installed script and greeter
+  binary. To exercise a local build instead, shadow the packaged one and
+  remove it after testing:
+  `sudo install -Dm755 target/release/argvus-greeter /usr/local/bin/`
+- Greeter session logs are written to
+  `$XDG_RUNTIME_DIR/argvus-greeter/session.log`.
+
 ## Package Contents
 
 The Arch package installs:
