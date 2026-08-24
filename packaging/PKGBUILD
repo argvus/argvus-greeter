@@ -1,6 +1,6 @@
 # Maintainer: William C. Canin
 pkgname=argvus-greeter
-pkgver=0.3.0
+pkgver=0.3.1
 pkgrel=1
 pkgdesc="Lightweight GTK4 greetd greeter for the Argvus desktop"
 arch=('x86_64')
