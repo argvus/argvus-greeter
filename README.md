@@ -107,6 +107,63 @@ default = "argvus"
 
 If the file does not exist, safe defaults are used.
 
+## User Avatars
+
+The greeter shows the avatar of the account selected on the login screen. The
+avatar belongs to the system account, not to the greeter configuration; there
+is no avatar entry in `greeter.toml` and no way to change an avatar from the
+login screen.
+
+### How it is resolved
+
+For each user discovered in `/etc/passwd`, Argvus Greeter resolves the avatar
+through [AccountsService](https://www.freedesktop.org/wiki/Software/AccountsService/)
+in this order:
+
+1. `/var/lib/AccountsService/icons/<username>`
+2. The `Icon=` path declared in `/var/lib/AccountsService/users/<username>`
+
+If neither source yields an existing, readable image file — or if the file
+cannot be decoded at render time (corrupted or unsupported format) — the
+built-in Argvus default avatar (`assets/avatar-default.svg`) is shown instead.
+No network access is ever performed and home directories are never consulted,
+so the greeter requires no extra permissions while running as the unprivileged
+`greeter` user.
+
+### Setting an avatar for a user
+
+Copy an image into the AccountsService icons directory as the administrator:
+
+```sh
+sudo install -Dm644 photo.png /var/lib/AccountsService/icons/alice
+```
+
+PNG and JPEG images work out of the box on Arch Linux; SVG also works when
+librsvg's gdk-pixbuf loader is installed. A custom location can be registered
+through the AccountsService user file:
+
+```ini
+# /var/lib/AccountsService/users/alice
+[User]
+Icon=/var/lib/AccountsService/icons/alice
+SystemAccount=false
+```
+
+Desktop environments that integrate with AccountsService (GNOME, KDE Plasma)
+write both locations automatically when an avatar is set in their settings
+panels.
+
+Because the image path is re-read from disk every time the selected user
+changes:
+
+- changing a user's photo takes effect on the next login screen selection
+  without rebuilding or restarting the greeter;
+- selecting another user in the dropdown immediately switches name and avatar;
+- users without a photo always receive the Argvus default avatar.
+
+The login screen is strictly read-only with respect to avatars: there is no
+button, menu, or flow to upload, choose, or remove them.
+
 ## Development
 
 Useful checks:
