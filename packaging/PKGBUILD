@@ -26,27 +26,27 @@ makedepends=(
 # )
 install="${pkgname}.install"
 source=(
-  "${pkgname}-${pkgver}.tar.gz::${url}/archive/refs/tags/v${pkgver}.tar.gz"
+  "${pkgname}-${pkgver}-${pkgrel}.tar.gz::${url}/archive/refs/tags/v${pkgver}-${pkgrel}.tar.gz"
 )
 sha256sums=('SKIP')
 
 prepare() {
-  cd "${pkgname}-${pkgver}"
+  cd "${pkgname}-${pkgver}-${pkgrel}"
   cargo fetch --locked --target "${CARCH}-unknown-linux-gnu"
 }
 
 build() {
-  cd "${pkgname}-${pkgver}"
+  cd "${pkgname}-${pkgver}-${pkgrel}"
   cargo build --release --locked --target-dir target
 }
 
 check() {
-  cd "${pkgname}-${pkgver}"
+  cd "${pkgname}-${pkgver}-${pkgrel}"
   cargo test --locked --target-dir target
 }
 
 package() {
-  cd "${pkgname}-${pkgver}"
+  cd "${pkgname}-${pkgver}-${pkgrel}"
 
   install -Dm755 "target/release/${pkgname}" \
     "${pkgdir}/usr/bin/${pkgname}"
