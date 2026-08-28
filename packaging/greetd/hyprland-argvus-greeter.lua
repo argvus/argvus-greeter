@@ -47,5 +47,5 @@ hl.config({
 })
 
 hl.on("hyprland.start", function()
-  hl.exec_cmd("sh -lc 'argvus-greeter; hyprctl dispatch exit'")
+  hl.exec_cmd("sh -lc '/usr/bin/argvus-greeter; hyprctl dispatch exit'")
 end)
