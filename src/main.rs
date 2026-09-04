@@ -1,6 +1,7 @@
 mod app;
 mod config;
 mod greetd;
+mod i18n;
 mod power;
 mod session;
 mod ui;

@@ -1,6 +1,7 @@
 use crate::{
     config::Config,
     greetd::{AuthPrompt, Command, Event},
+    i18n,
     power::{self, PowerAction},
     session::Session,
     users::User,
@@ -92,7 +93,7 @@ impl Widgets {
     fn new(app: &gtk::Application, config: &Config, users: &[User], sessions: &[Session]) -> Self {
         let window = gtk::ApplicationWindow::builder()
             .application(app)
-            .title("Argvus Greeter")
+            .title(i18n::label("Argvus Greeter", "Argvus Greeter"))
             .default_width(1280)
             .default_height(720)
             .build();
@@ -179,18 +180,18 @@ impl Widgets {
         user_dropdown.add_css_class("compact-select");
         form.append(&user_dropdown);
 
-        let prompt_label = gtk::Label::new(Some("Password"));
+        let prompt_label = gtk::Label::new(Some(i18n::label("Senha", "Password")));
         prompt_label.add_css_class("prompt-label");
         prompt_label.set_halign(gtk::Align::Start);
         form.append(&prompt_label);
 
         let auth_entry = gtk::Entry::new();
         auth_entry.set_visibility(false);
-        auth_entry.set_placeholder_text(Some("Password"));
+        auth_entry.set_placeholder_text(Some(i18n::label("Senha", "Password")));
         auth_entry.set_activates_default(true);
         form.append(&auth_entry);
 
-        let submit_button = gtk::Button::with_label("Log In");
+        let submit_button = gtk::Button::with_label(i18n::label("Entrar", "Log In"));
         submit_button.add_css_class("suggested-action");
         submit_button.set_receives_default(true);
         form.append(&submit_button);
@@ -271,7 +272,8 @@ fn update_clock(widgets: &Widgets) {
             if let Ok(time) = now.format("%H:%M") {
                 widgets.clock_label.set_text(&time);
             }
-            if let Ok(date) = now.format("%a, %d %B") {
+            let format = i18n::label("%a, %d de %B", "%a, %d %B");
+            if let Ok(date) = now.format(format) {
                 widgets.date_label.set_text(&date);
             }
         }
@@ -315,21 +317,26 @@ fn submit(widgets: &Widgets, state: &State) {
             .send(Command::AuthResponse(Some(response)))
             .is_err()
         {
-            widgets
-                .status_label
-                .set_text("Internal greeter channel is unavailable.");
+            widgets.status_label.set_text(i18n::label(
+                "Canal interno do greeter indisponível.",
+                "Internal greeter channel is unavailable.",
+            ));
         }
         return;
     }
 
     let Some(user) = selected_user(widgets, &state.users) else {
-        widgets.status_label.set_text("No login user is available.");
+        widgets.status_label.set_text(i18n::label(
+            "Nenhum usuário de login disponível.",
+            "No login user is available.",
+        ));
         return;
     };
     let Some(session) = selected_session(widgets, &state.sessions) else {
-        widgets
-            .status_label
-            .set_text("No Wayland session is available.");
+        widgets.status_label.set_text(i18n::label(
+            "Nenhuma sessão Wayland disponível.",
+            "No Wayland session is available.",
+        ));
         return;
     };
 
@@ -337,7 +344,10 @@ fn submit(widgets: &Widgets, state: &State) {
     widgets.auth_entry.set_text("");
     widgets.auth_entry.set_sensitive(false);
     widgets.submit_button.set_sensitive(false);
-    widgets.status_label.set_text("Starting authentication...");
+    widgets.status_label.set_text(i18n::label(
+        "Iniciando autenticação...",
+        "Starting authentication...",
+    ));
     if initial_response.is_empty() {
         state.pending_secret_response.replace(None);
     } else {
@@ -355,9 +365,10 @@ fn submit(widgets: &Widgets, state: &State) {
         })
         .is_err()
     {
-        widgets
-            .status_label
-            .set_text("Internal greeter channel is unavailable.");
+        widgets.status_label.set_text(i18n::label(
+            "Canal interno do greeter indisponível.",
+            "Internal greeter channel is unavailable.",
+        ));
     }
 }
 
@@ -383,43 +394,50 @@ fn handle_event(widgets: &Widgets, state: &State, event: Event) {
                     .send(Command::AuthResponse(Some(response)))
                     .is_err()
                 {
-                    widgets
-                        .status_label
-                        .set_text("Internal greeter channel is unavailable.");
+                    widgets.status_label.set_text(i18n::label(
+                        "Canal interno do greeter indisponível.",
+                        "Internal greeter channel is unavailable.",
+                    ));
                 }
                 return;
             }
 
+            let message = i18n::auth_message(&prompt.message);
             widgets.auth_entry.set_sensitive(true);
             widgets.auth_entry.set_visibility(!prompt.secret);
             widgets
                 .auth_entry
-                .set_placeholder_text(Some(&prompt.message));
-            widgets.prompt_label.set_text(&prompt.message);
+                .set_placeholder_text(Some(message.as_ref()));
+            widgets.prompt_label.set_text(message.as_ref());
             widgets.submit_button.set_sensitive(true);
             widgets.status_label.set_text("");
             widgets.auth_entry.grab_focus();
             state.waiting_for_prompt.set(true);
             state.active_prompt.replace(Some(prompt));
         }
-        Event::Info(message) => widgets.status_label.set_text(&message),
+        Event::Info(message) => {
+            let message = i18n::auth_message(&message);
+            widgets.status_label.set_text(message.as_ref());
+        }
         Event::Error(message) => {
+            let message = i18n::auth_message(&message);
             widgets.auth_entry.set_text("");
             widgets.auth_entry.set_sensitive(true);
             widgets.submit_button.set_sensitive(true);
-            widgets.status_label.set_text(&message);
+            widgets.status_label.set_text(message.as_ref());
             state.waiting_for_prompt.set(false);
             state.active_prompt.replace(None);
             state.pending_secret_response.replace(None);
         }
         Event::AuthFailed(message) => {
+            let translated = i18n::auth_message(&message);
             widgets.auth_entry.set_text("");
             widgets.auth_entry.set_sensitive(true);
             widgets.submit_button.set_sensitive(true);
             widgets.status_label.set_text(if message.is_empty() {
-                "Authentication failed."
+                i18n::label("Autenticação falhou.", "Authentication failed.")
             } else {
-                &message
+                translated.as_ref()
             });
             state.waiting_for_prompt.set(false);
             state.active_prompt.replace(None);
@@ -427,12 +445,16 @@ fn handle_event(widgets: &Widgets, state: &State, event: Event) {
             widgets.auth_entry.grab_focus();
         }
         Event::SessionStarting => {
-            widgets.status_label.set_text("Starting session...");
+            widgets
+                .status_label
+                .set_text(i18n::label("Iniciando sessão...", "Starting session..."));
             widgets.auth_entry.set_sensitive(false);
             widgets.submit_button.set_sensitive(false);
         }
         Event::SessionStarted => {
-            widgets.status_label.set_text("Session started.");
+            widgets
+                .status_label
+                .set_text(i18n::label("Sessão iniciada.", "Session started."));
             let window = widgets.window.clone();
             if let Some(app) = window.application() {
                 app.quit();
@@ -518,9 +540,15 @@ fn update_empty_state(widgets: &Widgets, users: &[User], sessions: &[Session]) {
         widgets.auth_entry.set_sensitive(false);
         widgets.submit_button.set_sensitive(false);
         widgets.status_label.set_text(if users.is_empty() {
-            "No local login users were found."
+            i18n::label(
+                "Nenhum usuário local de login foi encontrado.",
+                "No local login users were found.",
+            )
         } else {
-            "No Wayland sessions were found."
+            i18n::label(
+                "Nenhuma sessão Wayland foi encontrada.",
+                "No Wayland sessions were found.",
+            )
         });
     }
 }
@@ -528,7 +556,7 @@ fn update_empty_state(widgets: &Widgets, users: &[User], sessions: &[Session]) {
 fn power_menu() -> gtk::MenuButton {
     let menu = gtk::MenuButton::builder()
         .icon_name("system-shutdown-symbolic")
-        .tooltip_text("Power")
+        .tooltip_text(i18n::label("Energia", "Power"))
         .build();
     menu.add_css_class("power-button");
 

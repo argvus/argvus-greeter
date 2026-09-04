@@ -1,3 +1,4 @@
+use crate::i18n;
 use thiserror::Error;
 use zbus::blocking::{Connection, Proxy};
 
@@ -11,9 +12,9 @@ pub enum PowerAction {
 impl PowerAction {
     pub fn label(self) -> &'static str {
         match self {
-            Self::Shutdown => "Shutdown",
-            Self::Restart => "Restart",
-            Self::Suspend => "Suspend",
+            Self::Shutdown => i18n::label("Desligar", "Shutdown"),
+            Self::Restart => i18n::label("Reiniciar", "Restart"),
+            Self::Suspend => i18n::label("Suspender", "Suspend"),
         }
     }
 }
