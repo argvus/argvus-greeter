@@ -19,11 +19,11 @@ makedepends=(
   'cargo'
   'pkgconf'
 )
-# backup=(
-#   'etc/argvus/greeter.toml'
-#   'etc/argvus/hyprland-argvus-greeter.conf'
-#   'etc/argvus/hyprland-argvus-greeter.lua'
-# )
+backup=(
+  'etc/argvus/greeter.toml'
+  'etc/argvus/hyprland-argvus-greeter.conf'
+  'etc/argvus/hyprland-argvus-greeter.lua'
+)
 install="${pkgname}.install"
 source=("${pkgname}-${pkgver}.tar.gz")
 sha256sums=("SKIP")
