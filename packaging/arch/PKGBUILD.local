@@ -12,6 +12,7 @@ depends=(
   'gtk4'
   'argvus-appearance'
   'argvus-session'
+  'argvus-i18n'
   'hyprland'
   'systemd-libs'
 )

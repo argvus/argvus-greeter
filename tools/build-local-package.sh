@@ -20,7 +20,12 @@ archive="$PACKAGING_DIR/${pkgname}-${pkgver}.tar.gz"
 
 if grep -q "${pkgname}-\${pkgver}.tar.gz\|\${pkgname}-\${pkgver}.tar.gz\|${pkgname}-${pkgver}.tar.gz" "$BUILD_SCRIPT"; then
   echo "Creating local source archive: $archive"
-  tar -czf "$archive" \
+  staging_dir="$(mktemp -d)"
+  trap 'rm -rf "$staging_dir"' EXIT
+
+  mkdir -p "$staging_dir/${pkgname}-${pkgver}" "$staging_dir/argvus-i18n"
+
+  tar -cf - \
     --exclude='./.git' \
     --exclude='./.release' \
     --exclude='./packages-repo' \
@@ -36,8 +41,23 @@ if grep -q "${pkgname}-\${pkgver}.tar.gz\|\${pkgname}-\${pkgver}.tar.gz\|${pkgna
     --exclude="./${pkgname}-${pkgver}.tar.gz" \
     --exclude="./packaging/${pkgname}-${pkgver}.tar.gz" \
     --exclude="./packaging/arch/${pkgname}-${pkgver}.tar.gz" \
-    --transform "s#^\./#${pkgname}-${pkgver}/#" \
-    -C "$ROOT_DIR" .
+    -C "$ROOT_DIR" . \
+    | tar -xf - -C "$staging_dir/${pkgname}-${pkgver}"
+
+  i18n_root="$ROOT_DIR/../argvus-i18n"
+  if [[ ! -f "$i18n_root/Cargo.toml" ]]; then
+    echo "argvus-i18n checkout not found beside argvus-greeter: $i18n_root" >&2
+    exit 1
+  fi
+
+  tar -cf - \
+    --exclude='./.git' \
+    --exclude='./target' \
+    -C "$i18n_root" . \
+    | tar -xf - -C "$staging_dir/argvus-i18n"
+
+  tar -czf "$archive" \
+    -C "$staging_dir" "${pkgname}-${pkgver}" argvus-i18n
 fi
 
 if [[ -n "${MAKEPKG_FLAGS:-}" ]]; then

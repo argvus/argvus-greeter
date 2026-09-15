@@ -25,6 +25,8 @@ pub enum Event {
     Info(String),
     Error(String),
     AuthFailed(String),
+    AuthPromptUnavailable,
+    GreeterUnavailable,
     SessionStarting,
     SessionStarted,
 }
@@ -57,7 +59,7 @@ pub fn spawn_worker(commands: Receiver<Command>, events: Sender<Event>) {
                         Ok(state) => state,
                         Err(error) => {
                             warn!(%error, "could not begin greetd session");
-                            let _ = events.send(Event::Error(error.to_string()));
+                            let _ = events.send(Event::GreeterUnavailable);
                             WorkerState::Disconnected
                         }
                     };
@@ -68,8 +70,7 @@ pub fn spawn_worker(commands: Receiver<Command>, events: Sender<Event>) {
                         session,
                     } = state
                     else {
-                        let _ =
-                            events.send(Event::Error("No active authentication prompt.".into()));
+                        let _ = events.send(Event::AuthPromptUnavailable);
                         state = WorkerState::Disconnected;
                         continue;
                     };
@@ -78,7 +79,7 @@ pub fn spawn_worker(commands: Receiver<Command>, events: Sender<Event>) {
                         Ok(next) => next,
                         Err(error) => {
                             warn!(%error, "authentication exchange failed");
-                            let _ = events.send(Event::Error(error.to_string()));
+                            let _ = events.send(Event::GreeterUnavailable);
                             WorkerState::Disconnected
                         }
                     };

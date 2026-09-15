@@ -22,6 +22,7 @@ name = "argvus-greeter"
 version = "0.3.3"
 dependencies = [
  "anyhow",
+ "argvus-i18n",
  "greetd_ipc",
  "gtk4",
  "serde",
@@ -31,6 +32,13 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "zbus",
+]
+
+[[package]]
+name = "argvus-i18n"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
 ]
 
 [[package]]

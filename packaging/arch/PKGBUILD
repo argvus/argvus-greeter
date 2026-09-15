@@ -12,6 +12,7 @@ depends=(
   'gtk4'
   'argvus-appearance'
   'argvus-session'
+  'argvus-i18n'
   'hyprland'
   'systemd-libs'
 )
@@ -27,10 +28,12 @@ backup=(
 install="${pkgname}.install"
 source=(
   "${pkgname}-${pkgver}.tar.gz::${url}/archive/refs/tags/v${pkgver}.tar.gz"
+  "argvus-i18n-main.tar.gz::https://github.com/argvus/argvus-i18n/archive/refs/heads/main.tar.gz"
 )
-sha256sums=('SKIP')
+sha256sums=('SKIP' 'SKIP')
 
 prepare() {
+  mv "argvus-i18n-main" "argvus-i18n"
   cd "${pkgname}-${pkgver}"
   cargo fetch --locked --target "${CARCH}-unknown-linux-gnu"
 }

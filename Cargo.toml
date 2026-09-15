@@ -8,6 +8,7 @@ repository = "https://github.com/argvus/argvus-greeter"
 
 [dependencies]
 anyhow = "1.0.100"
+argvus-i18n = { path = "../argvus-i18n" }
 greetd_ipc = { version = "0.10.3", features = ["sync-codec"] }
 gtk = { package = "gtk4", version = "0.11.4", features = ["v4_12"] }
 serde = { version = "1.0.228", features = ["derive"] }

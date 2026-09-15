@@ -17,8 +17,9 @@ fn main() -> anyhow::Result<()> {
     let users = users::discover_users().context("failed to discover local users")?;
     let sessions = session::discover_sessions(&config.session.default)
         .context("failed to discover graphical sessions")?;
+    let i18n = i18n::load().context("failed to load greeter translations")?;
 
-    app::run(config, users, sessions);
+    app::run(config, users, sessions, i18n);
     Ok(())
 }
 

@@ -1,4 +1,4 @@
-use crate::i18n;
+use argvus_i18n::I18n;
 use thiserror::Error;
 use zbus::blocking::{Connection, Proxy};
 
@@ -10,11 +10,11 @@ pub enum PowerAction {
 }
 
 impl PowerAction {
-    pub fn label(self) -> &'static str {
+    pub fn label(self, i18n: &I18n) -> String {
         match self {
-            Self::Shutdown => i18n::label("Desligar", "Shutdown"),
-            Self::Restart => i18n::label("Reiniciar", "Restart"),
-            Self::Suspend => i18n::label("Suspender", "Suspend"),
+            Self::Shutdown => i18n.tr("power.shutdown"),
+            Self::Restart => i18n.tr("power.restart"),
+            Self::Suspend => i18n.tr("power.suspend"),
         }
     }
 }

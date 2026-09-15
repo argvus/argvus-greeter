@@ -2,9 +2,10 @@ use crate::{config::Config, greetd, session::Session, ui, users::User};
 use gtk::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::Arc;
 use std::sync::mpsc;
 
-pub fn run(config: Config, users: Vec<User>, sessions: Vec<Session>) {
+pub fn run(config: Config, users: Vec<User>, sessions: Vec<Session>, i18n: Arc<argvus_i18n::I18n>) {
     let (command_tx, command_rx) = mpsc::channel();
     let (event_tx, event_rx) = mpsc::channel();
     greetd::spawn_worker(command_rx, event_tx);
@@ -25,6 +26,7 @@ pub fn run(config: Config, users: Vec<User>, sessions: Vec<Session>) {
             config.clone(),
             users.clone(),
             sessions.clone(),
+            i18n.clone(),
             command_tx.clone(),
             event_rx,
         )
