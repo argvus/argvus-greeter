@@ -2,11 +2,12 @@
 pkgname=argvus-greeter
 pkgver=0.4.0
 pkgrel=1
-pkgdesc="Lightweight GTK4 greetd greeter for the Argvus desktop"
+pkgdesc="Lightweight GTK4 greetd greeter for the Argvus Desktop Environment"
 arch=('x86_64')
 url="https://github.com/argvus/argvus-greeter"
 license=('GPL-3.0-only')
 options=('!debug')
+install="${pkgname}.install"
 depends=(
   'greetd'
   'gtk4'
@@ -25,27 +26,17 @@ backup=(
   'etc/argvus/hyprland-argvus-greeter.conf'
   'etc/argvus/hyprland-argvus-greeter.lua'
 )
-install="${pkgname}.install"
-source=(
-  "${pkgname}-${pkgver}.tar.gz::${url}/archive/refs/tags/v${pkgver}.tar.gz"
-  "argvus-i18n-main.tar.gz::https://github.com/argvus/argvus-i18n/archive/refs/heads/main.tar.gz"
-)
-sha256sums=('SKIP' 'SKIP')
-
-prepare() {
-  mv "argvus-i18n-main" "argvus-i18n"
-  cd "${pkgname}-${pkgver}"
-  cargo fetch --locked --target "${CARCH}-unknown-linux-gnu"
-}
+source=("${pkgname}-${pkgver}.tar.gz")
+sha256sums=()
 
 build() {
   cd "${pkgname}-${pkgver}"
-  cargo build --release --locked --target-dir target
+  cargo build --workspace --release --locked
 }
 
 check() {
   cd "${pkgname}-${pkgver}"
-  cargo test --locked --target-dir target
+  cargo test --workspace --release --locked
 }
 
 package() {

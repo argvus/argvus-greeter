@@ -13,14 +13,13 @@ pkg-config --version
 ```
 
 On Arch Linux, the runtime/build dependencies are represented by
-`packaging/PKGBUILD`.
+`packaging/arch/ci/PKGBUILD` and `packaging/arch/local/PKGBUILD`.
 
 ## Commands
 
 ```sh
-cargo build --release --locked
-cargo test --locked
-cargo clippy --locked --all-targets --all-features -- -D warnings
+make check
+make package
 ```
 
 The greeter expects `GREETD_SOCK` to be set by greetd for real authentication.
@@ -107,7 +106,7 @@ before every Argvus component package is present in the public repository.
 
 ## Release Flow
 
-1. Update `Cargo.toml` version.
+1. Update the workspace version in `Cargo.toml`.
 2. Run tests and clippy.
 3. Commit the version change.
 4. Tag `vX.Y.Z` and push the tag.

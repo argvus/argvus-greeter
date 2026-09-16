@@ -1,22 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 
-if [[ -f "$ROOT_DIR/packaging/arch/PKGBUILD.local" ]]; then
-  PACKAGING_DIR="$ROOT_DIR/packaging/arch"
-elif [[ -f "$ROOT_DIR/packaging/PKGBUILD.local" ]]; then
-  PACKAGING_DIR="$ROOT_DIR/packaging"
-else
-  echo "PKGBUILD.local not found under packaging/arch or packaging." >&2
-  exit 1
-fi
+PACKAGING_DIR="$ROOT_DIR/packaging/arch/local"
 
-BUILD_SCRIPT="$PACKAGING_DIR/PKGBUILD.local"
+BUILD_SCRIPT="$PACKAGING_DIR/PKGBUILD"
 metadata="$({ cd "$PACKAGING_DIR" && bash -c 'source "$1"; printf "%s\n%s\n" "$pkgname" "$pkgver"' bash "$BUILD_SCRIPT"; })"
 pkgname="$(printf '%s\n' "$metadata" | sed -n '1p')"
 pkgver="$(printf '%s\n' "$metadata" | sed -n '2p')"
-archive="$PACKAGING_DIR/${pkgname}-${pkgver}.tar.gz"
+BUILD_DIR="$ROOT_DIR/build"
+ARTIFACTS_DIR="$BUILD_DIR/artifacts"
+DIST_DIR="$BUILD_DIR/dist"
+archive="$ARTIFACTS_DIR/${pkgname}-${pkgver}.tar.gz"
+mkdir -p "$ARTIFACTS_DIR" "$DIST_DIR"
+find "$DIST_DIR" -maxdepth 1 -type f -name "${pkgname}-*.pkg.tar.*" -delete
 
 if grep -q "${pkgname}-\${pkgver}.tar.gz\|\${pkgname}-\${pkgver}.tar.gz\|${pkgname}-${pkgver}.tar.gz" "$BUILD_SCRIPT"; then
   echo "Creating local source archive: $archive"
@@ -33,14 +31,17 @@ if grep -q "${pkgname}-\${pkgver}.tar.gz\|\${pkgname}-\${pkgver}.tar.gz\|${pkgna
     --exclude='./pkg' \
     --exclude='./packaging/pkg' \
     --exclude='./packaging/src' \
-    --exclude='./packaging/arch/pkg' \
-    --exclude='./packaging/arch/src' \
+    --exclude='./packaging/arch/ci/pkg' \
+    --exclude='./packaging/arch/ci/src' \
+    --exclude='./packaging/arch/local/pkg' \
+    --exclude='./packaging/arch/local/src' \
     --exclude='./packaging/*.pkg.tar*' \
-    --exclude='./packaging/arch/*.pkg.tar*' \
+    --exclude='./packaging/arch/ci/*.pkg.tar*' \
+    --exclude='./packaging/arch/local/*.pkg.tar*' \
     --exclude="./${pkgdir:-pkg}" \
     --exclude="./${pkgname}-${pkgver}.tar.gz" \
     --exclude="./packaging/${pkgname}-${pkgver}.tar.gz" \
-    --exclude="./packaging/arch/${pkgname}-${pkgver}.tar.gz" \
+    --exclude="./build/artifacts/${pkgname}-${pkgver}.tar.gz" \
     -C "$ROOT_DIR" . \
     | tar -xf - -C "$staging_dir/${pkgname}-${pkgver}"
 
@@ -70,15 +71,14 @@ else
 fi
 
 cd "$PACKAGING_DIR"
+export BUILDDIR="$ARTIFACTS_DIR"
+export SRCDEST="$ARTIFACTS_DIR"
+export PKGDEST="$DIST_DIR"
+cp "$BUILD_SCRIPT" "$PACKAGING_DIR/PKGBUILD.local"
+trap 'rm -f "$PACKAGING_DIR/PKGBUILD.local"' EXIT
+sha256="$(sha256sum "$archive" | awk '{print $1}')"
+sed -i "s/^sha256sums=.*/sha256sums=(\"${sha256}\")/" "$PACKAGING_DIR/PKGBUILD.local"
 makepkg -p PKGBUILD.local "${flags[@]}" "$@"
 
-packages="$(find "$PACKAGING_DIR" -maxdepth 1 -type f -name "${pkgname}-*.pkg.tar.zst" -print | sort)"
-if [[ -n "$packages" ]]; then
-  printf 'Packages created:\n%s\n' "$packages"
-
-  DIST_DIR="$ROOT_DIR/dist"
-  mkdir -p "$DIST_DIR"
-  mv -f $packages "$DIST_DIR/"
-  printf 'Moved to %s:\n' "$DIST_DIR"
-  printf '%s\n' "$packages" | xargs -I{} basename {}
-fi
+printf 'Packages created in %s:\n' "$DIST_DIR"
+find "$DIST_DIR" -maxdepth 1 -type f -name "${pkgname}-*.pkg.tar.zst" -printf '  %f\n' | sort

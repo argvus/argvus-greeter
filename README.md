@@ -26,7 +26,7 @@ from `GREETD_SOCK`; greetd then delegates authentication to PAM.
 
 ## Requirements
 
-- Rust 1.92 or newer
+- Rust 1.95 or newer
 - GTK 4
 - greetd
 - A Wayland compositor suitable for running the greeter, such as Hyprland
@@ -54,8 +54,9 @@ Expected package locations:
 Arch packaging can install this repository's `packaging/greetd` examples as
 documentation or adapt them into package defaults.
 
-Arch packaging is owned by this repository through `packaging/PKGBUILD`. Tag
-pushes build and publish signed `.pkg.tar.zst` packages to the shared
+Arch packaging is owned by this repository through
+`packaging/arch/ci/PKGBUILD`. Tag pushes build and publish signed
+`.pkg.tar.zst` packages to the shared
 `argvus/packages` repository.
 
 ## greetd Configuration
