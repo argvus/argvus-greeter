@@ -22,7 +22,7 @@ name = "argvus-greeter"
 version = "0.4.0"
 dependencies = [
  "anyhow",
- "argvus-i18n",
+ "argvus-i18n-core",
  "greetd_ipc",
  "gtk4",
  "serde",
@@ -35,7 +35,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "argvus-i18n"
+name = "argvus-i18n-core"
 version = "0.1.0"
 dependencies = [
  "serde_json",
