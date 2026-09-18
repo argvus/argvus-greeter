@@ -29,6 +29,10 @@ backup=(
 source=("${pkgname}-${pkgver}.tar.gz")
 sha256sums=()
 
+_cargo_target_dir() {
+  printf '%s' "${CARGO_TARGET_DIR:-$srcdir/${pkgname}-${pkgver}/target}"
+}
+
 build() {
   cd "${pkgname}-${pkgver}"
   cargo build --workspace --release --locked
@@ -42,7 +46,7 @@ check() {
 package() {
   cd "${pkgname}-${pkgver}"
 
-  install -Dm755 "target/release/${pkgname}" \
+  install -Dm755 "$(_cargo_target_dir)/release/${pkgname}" \
     "${pkgdir}/usr/bin/${pkgname}"
   install -Dm755 packaging/greetd/argvus-greeter-setup \
     "${pkgdir}/usr/bin/argvus-greeter-setup"

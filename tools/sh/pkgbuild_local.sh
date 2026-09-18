@@ -12,8 +12,9 @@ pkgver="$(printf '%s\n' "$metadata" | sed -n '2p')"
 BUILD_DIR="$ROOT_DIR/build"
 ARTIFACTS_DIR="$BUILD_DIR/artifacts"
 DIST_DIR="$BUILD_DIR/dist"
+CARGO_TARGET_DIR="$BUILD_DIR/cargo-target"
 archive="$ARTIFACTS_DIR/${pkgname}-${pkgver}.tar.gz"
-mkdir -p "$ARTIFACTS_DIR" "$DIST_DIR"
+mkdir -p "$ARTIFACTS_DIR" "$CARGO_TARGET_DIR" "$DIST_DIR"
 find "$DIST_DIR" -maxdepth 1 -type f -name "${pkgname}-*.pkg.tar.*" -delete
 
 if grep -q "${pkgname}-\${pkgver}.tar.gz\|\${pkgname}-\${pkgver}.tar.gz\|${pkgname}-${pkgver}.tar.gz" "$BUILD_SCRIPT"; then
@@ -28,6 +29,11 @@ if grep -q "${pkgname}-\${pkgver}.tar.gz\|\${pkgname}-\${pkgver}.tar.gz\|${pkgna
     --exclude='./.release' \
     --exclude='./packages-repo' \
     --exclude='./target' \
+    --exclude='*/target' \
+    --exclude='./build' \
+    --exclude='*/build' \
+    --exclude='./dist' \
+    --exclude='*/dist' \
     --exclude='./pkg' \
     --exclude='./packaging/pkg' \
     --exclude='./packaging/src' \
@@ -54,6 +60,11 @@ if grep -q "${pkgname}-\${pkgver}.tar.gz\|\${pkgname}-\${pkgver}.tar.gz\|${pkgna
   tar -cf - \
     --exclude='./.git' \
     --exclude='./target' \
+    --exclude='*/target' \
+    --exclude='./build' \
+    --exclude='*/build' \
+    --exclude='./dist' \
+    --exclude='*/dist' \
     -C "$i18n_root" . \
     | tar -xf - -C "$staging_dir/argvus-i18n"
 
@@ -73,7 +84,7 @@ fi
 cd "$PACKAGING_DIR"
 export BUILDDIR="$ARTIFACTS_DIR"
 export SRCDEST="$ARTIFACTS_DIR"
-export PKGDEST="$DIST_DIR"
+export PKGDEST="$DIST_DIR" CARGO_TARGET_DIR
 cp "$BUILD_SCRIPT" "$PACKAGING_DIR/PKGBUILD.local"
 trap 'rm -f "$PACKAGING_DIR/PKGBUILD.local"' EXIT
 sha256="$(sha256sum "$archive" | awk '{print $1}')"
