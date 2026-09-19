@@ -30,6 +30,8 @@ systemd
 
 The greeter does not authenticate users itself. It uses the greetd IPC socket
 from `GREETD_SOCK`; greetd then delegates authentication to PAM.
+Diagnostic logs are written to the runtime greeter directory instead of the
+interactive terminal, so backend messages cannot corrupt the TUI layout.
 
 ## Requirements
 

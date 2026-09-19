@@ -15,6 +15,11 @@ mod ui;
 mod users;
 
 use anyhow::Context;
+use std::{
+  env,
+  fs::{self, File, OpenOptions},
+  path::PathBuf,
+};
 use tracing_subscriber::{EnvFilter, fmt};
 
 fn main() -> anyhow::Result<()> {
@@ -35,13 +40,49 @@ fn main() -> anyhow::Result<()> {
 
 fn init_logging() {
   // Respect RUST_LOG when operators need diagnostics, while keeping normal
-  // login screens quiet by default.
+  // login screens quiet by default. Logs must never share Kitty's stdout or
+  // stderr because those streams are the Ratatui drawing surface.
   let filter = EnvFilter::try_from_default_env()
     .unwrap_or_else(|_| EnvFilter::new("argvus_greeter=info,warn"));
 
-  fmt()
-    .with_env_filter(filter)
-    .with_target(false)
-    .compact()
-    .init();
+  match open_log_file() {
+    Some(file) => fmt()
+      .with_env_filter(filter)
+      .with_target(false)
+      .compact()
+      .with_writer(file)
+      .init(),
+    None => fmt()
+      .with_env_filter(filter)
+      .with_target(false)
+      .compact()
+      // If runtime storage is unavailable, discard diagnostics rather than
+      // corrupting the interactive login surface with terminal log lines.
+      .with_writer(std::io::sink)
+      .init(),
+  }
+}
+
+/// Opens the private diagnostic log used by the pre-authentication process.
+///
+/// Runtime state is preferred because it is session-scoped. The state-home
+/// fallback keeps development launches diagnosable when greetd does not set
+/// `XDG_RUNTIME_DIR`; the final temporary path avoids writing to the terminal.
+fn open_log_file() -> Option<File> {
+  let state_dir = env::var_os("XDG_RUNTIME_DIR")
+    .map(PathBuf::from)
+    .map(|path| path.join("argvus-greeter"))
+    .or_else(|| {
+      env::var_os("XDG_STATE_HOME")
+        .map(PathBuf::from)
+        .map(|path| path.join("argvus-greeter"))
+    })
+    .unwrap_or_else(|| env::temp_dir().join(format!("argvus-greeter-{}", std::process::id())));
+
+  fs::create_dir_all(&state_dir).ok()?;
+  OpenOptions::new()
+    .create(true)
+    .append(true)
+    .open(state_dir.join("greeter.log"))
+    .ok()
 }

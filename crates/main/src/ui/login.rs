@@ -114,6 +114,13 @@ pub struct LoginApp {
   waiting_for_prompt: bool,
   /// Initial password entered before greetd emits its secret prompt.
   pending_secret_response: Option<String>,
+  /// Prevents a second CreateSession request while greetd is processing login.
+  ///
+  /// greetd permits only one session configuration per worker connection. A
+  /// repeated Enter event must therefore be ignored until the current attempt
+  /// reaches a terminal event; otherwise the server reports that a session is
+  /// already being configured and the visible login flow becomes misleading.
+  authentication_in_progress: bool,
   /// Status message and semantic severity shown below the form.
   status: Option<(String, StatusKind)>,
   /// Whether the power overlay is currently visible.
@@ -130,6 +137,8 @@ pub struct LoginApp {
 enum StatusKind {
   /// Non-error progress or informational text.
   Info,
+  /// A diagnostic or backend warning that does not necessarily stop login.
+  Warn,
   /// A recoverable authentication or system error.
   Error,
   /// A successfully requested or completed action.
@@ -180,6 +189,7 @@ impl LoginApp {
       },
       waiting_for_prompt: false,
       pending_secret_response: None,
+      authentication_in_progress: false,
       status: None,
       power_open: false,
       power_selected: 0,
@@ -218,12 +228,14 @@ impl LoginApp {
       .bg(self.theme.background)
       .render(area, frame.buffer_mut());
     let inner = area.inner(Margin::new(1, 1));
-    // Header, clock, main content, and footer use fixed chrome heights; the
-    // body receives all remaining space for user/session content.
+    // Header, clock, body, message box, and footer use explicit regions. The
+    // message box is intentionally outside the form so every status appears
+    // in one predictable location only.
     let rows = Layout::vertical([
       Constraint::Length(1),
       Constraint::Length(2),
       Constraint::Min(1),
+      Constraint::Length(3),
       Constraint::Length(2),
     ])
     .split(inner);
@@ -239,7 +251,8 @@ impl LoginApp {
     );
     self.draw_clock(frame, rows[1]);
     self.draw_body(frame, rows[2]);
-    self.draw_footer(frame, rows[3]);
+    self.draw_message_box(frame, rows[3]);
+    self.draw_footer(frame, rows[4]);
 
     if self.power_open {
       self.draw_power_menu(frame, area);
@@ -344,8 +357,9 @@ impl LoginApp {
     );
   }
 
-  /// Renders the account preview, password response, session selector, login
-  /// action, and status line.
+  /// Renders the account preview, password response, session selector, and
+  /// login action. Status messages are rendered by [`Self::draw_message_box`]
+  /// so they cannot be duplicated inside the form.
   fn draw_login_panel(&mut self, frame: &mut Frame, area: Rect) {
     let inner = area.inner(Margin::new(2, 1));
     // The account row is taller than the other controls so the avatar can be
@@ -355,7 +369,6 @@ impl LoginApp {
       Constraint::Length(3),
       Constraint::Length(3),
       Constraint::Length(3),
-      Constraint::Min(3),
     ])
     .split(inner);
     let selected_name = self
@@ -376,7 +389,11 @@ impl LoginApp {
         .border_style(Style::new().fg(border)),
       rows[0],
     );
-    let account_columns = Layout::horizontal([Constraint::Length(12), Constraint::Min(1)])
+    // Kitty preserves the avatar's square aspect ratio in terminal-cell
+    // coordinates. A six-cell inner target at this row height matches the
+    // visible image width, keeping the frame adjacent to the actual pixels
+    // instead of surrounding unused horizontal letterboxing space.
+    let account_columns = Layout::horizontal([Constraint::Length(8), Constraint::Min(1)])
       .split(rows[0].inner(Margin::new(1, 0)));
     if let Some(avatar) = self.avatar.as_mut() {
       // Draw the frame first and render the image into its inner rectangle so
@@ -478,24 +495,29 @@ impl LoginApp {
       ),
       rows[3],
     );
-    let status = self
-      .status
-      .as_ref()
-      .map(|(text, kind)| {
-        let color = match kind {
-          StatusKind::Info => self.theme.muted,
-          StatusKind::Error => self.theme.error,
-          StatusKind::Success => self.theme.success,
-        };
-        Line::from(Span::styled(text.clone(), Style::new().fg(color)))
-      })
-      .unwrap_or_else(|| {
-        Line::from(Span::styled(
-          self.i18n.tr("select_user_help"),
-          Style::new().fg(self.theme.muted),
-        ))
-      });
-    frame.render_widget(Paragraph::new(status).wrap(Wrap { trim: true }), rows[4]);
+  }
+
+  /// Renders the single status channel for progress, warnings, errors, and
+  /// successful operations directly above the navigation footer.
+  fn draw_message_box(&self, frame: &mut Frame, area: Rect) {
+    let (message, color) = match self.status.as_ref() {
+      Some((text, StatusKind::Info)) => (text.clone(), self.theme.muted),
+      Some((text, StatusKind::Warn)) => (text.clone(), self.theme.warning),
+      Some((text, StatusKind::Error)) => (text.clone(), self.theme.error),
+      Some((text, StatusKind::Success)) => (text.clone(), self.theme.success),
+      None => (self.i18n.tr("select_user_help"), self.theme.muted),
+    };
+    frame.render_widget(
+      Paragraph::new(message)
+        .wrap(Wrap { trim: true })
+        .style(Style::new().fg(color))
+        .block(
+          Block::bordered()
+            .title(self.i18n.tr("status"))
+            .border_style(Style::new().fg(color)),
+        ),
+      area,
+    );
   }
 
   /// Renders the keyboard help line shared by all normal login states.
@@ -574,8 +596,8 @@ impl LoginApp {
       return;
     }
     if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
-      // Ctrl+C is the emergency escape path for development and recovery.
-      self.quit = true;
+      // Ctrl+C is deliberately consumed. Exiting the login process leaves the
+      // greetd compositor without a surface and produces a blank screen.
       return;
     }
     if self.power_open {
@@ -687,8 +709,15 @@ impl LoginApp {
         .send(Command::AuthResponse(Some(response)))
         .is_err()
       {
+        self.authentication_in_progress = false;
         self.set_error("internal_channel_unavailable");
       }
+      return;
+    }
+    // A key repeat or an impatient second Enter must not create another greetd
+    // session while the first request is still waiting for PAM. The worker
+    // remains the owner of the active socket until it emits a final event.
+    if self.authentication_in_progress {
       return;
     }
     let Some(user) = self.users.get(self.selected_user) else {
@@ -704,6 +733,7 @@ impl LoginApp {
     // arrives.
     let initial = std::mem::take(&mut self.password);
     self.pending_secret_response = (!initial.is_empty()).then_some(initial);
+    self.authentication_in_progress = true;
     self.status = Some((self.i18n.tr("starting_authentication"), StatusKind::Info));
     self.focus = Focus::Password;
     if self
@@ -714,6 +744,7 @@ impl LoginApp {
       })
       .is_err()
     {
+      self.authentication_in_progress = false;
       self.set_error("internal_channel_unavailable");
     }
   }
@@ -746,16 +777,20 @@ impl LoginApp {
       // Authentication messages are normalized at the UI boundary so backend
       // wording does not leak into the rest of the state machine.
       Event::Info(message) => {
-        self.status = Some((i18n::auth_message(&self.i18n, &message), StatusKind::Info))
+        self.status = Some((i18n::auth_message(&self.i18n, &message), StatusKind::Warn))
       }
       Event::Error(message) => {
         self.password.clear();
         self.waiting_for_prompt = false;
+        self.pending_secret_response = None;
+        self.authentication_in_progress = false;
         self.set_status(i18n::auth_message(&self.i18n, &message), StatusKind::Error);
       }
       Event::AuthFailed(message) => {
         self.password.clear();
         self.waiting_for_prompt = false;
+        self.pending_secret_response = None;
+        self.authentication_in_progress = false;
         let text = if message.is_empty() {
           self.i18n.tr("authentication_failed")
         } else {
@@ -765,10 +800,14 @@ impl LoginApp {
       }
       Event::AuthPromptUnavailable => {
         self.waiting_for_prompt = false;
+        self.pending_secret_response = None;
+        self.authentication_in_progress = false;
         self.set_error("no_active_auth_prompt");
       }
       Event::GreeterUnavailable => {
         self.waiting_for_prompt = false;
+        self.pending_secret_response = None;
+        self.authentication_in_progress = false;
         self.set_error("login_service_unavailable");
       }
       Event::SessionStarting => {
@@ -777,6 +816,7 @@ impl LoginApp {
       }
       Event::SessionStarted => {
         self.set_status(self.i18n.tr("session_started"), StatusKind::Success);
+        self.authentication_in_progress = false;
         self.quit = true;
       }
     }

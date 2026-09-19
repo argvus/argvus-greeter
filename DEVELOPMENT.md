@@ -82,6 +82,9 @@ Notes:
   `sudo install -Dm755 target/release/argvus-greeter /usr/local/bin/`
 - Greeter session logs are written to
   `$XDG_RUNTIME_DIR/argvus-greeter/session.log`.
+- Rust authentication and discovery logs are written separately to
+  `$XDG_RUNTIME_DIR/argvus-greeter/greeter.log`; they are never emitted to the
+  Kitty terminal surface used by the TUI.
 
 ## Package Contents
 

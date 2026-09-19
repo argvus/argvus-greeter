@@ -74,6 +74,14 @@ pub fn spawn_worker(commands: Receiver<Command>, events: Sender<Event>) {
     while let Ok(command) = commands.recv() {
       match command {
         Command::Begin { username, session } => {
+          // greetd allows only one CreateSession exchange per worker at a
+          // time. Keep the existing socket when a repeated UI event arrives;
+          // replacing it would abandon the in-flight authentication and make
+          // every subsequent attempt appear to be concurrently configured.
+          if matches!(&state, WorkerState::Authenticating { .. }) {
+            warn!(%username, "ignoring duplicate greetd session request");
+            continue;
+          }
           // A failed begin operation must not leave a partially initialized
           // socket available for a later password submission.
           state = match begin_session(username, session, &events) {
