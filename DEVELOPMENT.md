@@ -95,6 +95,8 @@ The Arch package installs:
 /usr/bin/argvus-greeter-tui
 /usr/bin/argvus-greeter-setup
 /usr/bin/argvus-greeter-session
+/usr/lib/argvus/greeter/handoff
+/usr/lib/tmpfiles.d/argvus-greeter.conf
 /etc/argvus/greeter.toml
 /etc/argvus/hyprland-argvus-greeter.conf
 /etc/argvus/hyprland-argvus-greeter.lua

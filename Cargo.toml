@@ -2,7 +2,7 @@
 # Keep the greeter as a small workspace so release, test, and package commands
 # share exactly the same dependency and profile behavior.
 resolver = "2"
-members = ["crates/main"]
+members = ["crates/main", "crates/handoff"]
 
 [workspace.package]
 # Workspace metadata is inherited by the binary crate and is also consumed by

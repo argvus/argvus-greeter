@@ -29,6 +29,7 @@ systemd
    -> minimal Wayland compositor session
    -> argvus-tui-terminal
    -> argvus-greeter
+   -> DRM/KMS handoff spinner
    -> selected Wayland desktop session
 ```
 
@@ -88,8 +89,12 @@ boot or terminal logs do not remain visible under the login screen.
 The greeter compositor still sets `XDG_CURRENT_DESKTOP=Hyprland` to satisfy
 Hyprland's startup checks, while `XDG_SESSION_DESKTOP=argvus-greeter` identifies
 the login environment. When authentication succeeds, the greeter app exits and
-the minimal compositor is stopped immediately before greetd hands over to the
-real user session.
+the handoff helper starts a direct DRM/KMS spinner before the minimal
+compositor is stopped. The spinner keeps the display covered until
+`argvus-session` releases DRM immediately before starting the real user
+compositor. The Wayland splash remains available as a fallback after the user
+compositor becomes available. The session startup path does not start a second
+Wayland spinner, so the DRM/KMS handoff is the only transition indicator.
 
 When installed from the Arch package, apply the Argvus greetd configuration
 with:

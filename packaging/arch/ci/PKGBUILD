@@ -19,6 +19,7 @@ depends=(
   'kitty'
   'hyprland'
   'systemd-libs'
+  'libdrm'
 )
 makedepends=(
   'cargo'
@@ -66,6 +67,8 @@ package() {
     "${pkgdir}/usr/bin/argvus-greeter-session"
   install -Dm755 packaging/greetd/argvus-greeter-tui \
     "${pkgdir}/usr/bin/argvus-greeter-tui"
+  install -Dm755 "target/release/argvus-greeter-handoff" \
+    "${pkgdir}/usr/lib/argvus/greeter/handoff"
 
   install -Dm644 packaging/greetd/greeter.toml \
     "${pkgdir}/etc/argvus/greeter.toml"
@@ -73,6 +76,8 @@ package() {
     "${pkgdir}/etc/argvus/hyprland-argvus-greeter.conf"
   install -Dm644 packaging/greetd/hyprland-argvus-greeter.lua \
     "${pkgdir}/etc/argvus/hyprland-argvus-greeter.lua"
+  install -Dm644 packaging/greetd/argvus-greeter-tmpfiles.conf \
+    "${pkgdir}/usr/lib/tmpfiles.d/argvus-greeter.conf"
 
   install -Dm644 packaging/greetd/config.toml \
     "${pkgdir}/usr/share/doc/${pkgname}/greetd-config.toml"

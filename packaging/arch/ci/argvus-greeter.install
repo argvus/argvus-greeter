@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Keep CI-installed package behavior identical to local Arch installations.
 post_install() {
+  /usr/bin/systemd-tmpfiles --create /usr/lib/tmpfiles.d/argvus-greeter.conf >/dev/null 2>&1 || true
   /usr/bin/argvus-greeter-setup --sync-themes >/dev/null 2>&1 || true
   cat <<'EOF'
 ==> To use Argvus Greeter with greetd, run:

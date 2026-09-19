@@ -18,6 +18,33 @@ argvus-tui-terminal \
   -- /usr/bin/argvus-greeter
 status=$?
 
+start_handoff() {
+  socket='/run/argvus-greeter/handoff.sock'
+  log_dir="${XDG_RUNTIME_DIR:-/tmp}/argvus-greeter"
+  log_file="$log_dir/handoff.log"
+
+  [ "$status" -eq 0 ] || return 0
+  [ -x /usr/lib/argvus/greeter/handoff ] || return 0
+  mkdir -p "$log_dir" 2>/dev/null || true
+
+  # The handoff process waits for the greeter compositor to release DRM. It is
+  # deliberately detached so it can survive this wrapper and bridge into the
+  # greetd-started user session.
+  nohup /usr/lib/argvus/greeter/handoff --socket "$socket" \
+    </dev/null >>"$log_file" 2>&1 &
+
+  # Ensure the control endpoint exists before asking Hyprland to exit. The
+  # DRM acquisition itself may still be pending while the greeter compositor
+  # owns the device.
+  _tries=0
+  while [ "$_tries" -lt 40 ] && [ ! -S "$socket" ]; do
+    _tries=$((_tries + 1))
+    sleep 0.025
+  done
+}
+
+start_handoff
+
 if command -v hyprctl >/dev/null 2>&1; then
   hyprctl dispatch exit >/dev/null 2>&1 || true
 fi
