@@ -1,6 +1,8 @@
 .PHONY: help build package pkg rust-build release install install-package clean \
-	validate lint lint-shell fmt fmt-check clippy test tests check audit deny machete changelog
+validate lint lint-shell fmt fmt-check clippy test tests check audit deny machete changelog
 
+# Keep validation as the default so an accidental bare `make` does not mutate
+# the system or start a package installation.
 .DEFAULT_GOAL := help
 
 help:
@@ -16,6 +18,8 @@ help:
 	@echo "  make changelog       - regenerate CHANGELOG.md with git-cliff"
 
 lint-shell:
+	# Validate every project-owned shell script without assuming Bash for POSIX
+	# launchers; the second pass checks Bash-only packaging helpers separately.
 	@for root in tools packaging/arch/common src; do \
 		if [ -d "$$root" ]; then \
 			find "$$root" -type f -name '*.sh' -exec shellcheck -e SC1090 -e SC2034 -e SC2154 {} +; \
@@ -35,6 +39,7 @@ fmt:
 	@cargo fmt --all
 
 fmt-check:
+	# Formatting is checked, not rewritten, by the verification target.
 	@cargo fmt --all -- --check
 
 clippy:
@@ -55,6 +60,7 @@ machete:
 	@cargo machete
 
 check: lint fmt-check clippy test
+	# This aggregate target is the pre-commit quality gate.
 
 rust-build:
 	@cargo build --workspace --locked

@@ -1,12 +1,25 @@
+//! Translation loading and normalization of greetd prompt messages.
+//!
+//! greetd messages originate outside the application and vary slightly by
+//! PAM/backend implementation. Normalizing known messages here keeps the UI
+//! independent from English prompt wording while preserving unknown text.
+
 use anyhow::Result;
 use argvus_i18n::I18n;
 use std::sync::Arc;
 
+/// Loads the shared `greeter` translation catalog once for the application.
 pub fn load() -> Result<Arc<I18n>> {
   Ok(Arc::new(I18n::new("greeter")?))
 }
 
+/// Converts common greetd/PAM messages into stable translation keys.
+///
+/// Unknown messages are returned unchanged because authentication backends may
+/// provide useful administrator- or site-specific information.
 pub fn auth_message(i18n: &I18n, message: &str) -> String {
+  // Punctuation and case are presentation details, not part of the lookup
+  // contract, so remove them before matching known phrases.
   let normalized = message
     .trim()
     .trim_end_matches([':', '.'])

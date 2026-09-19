@@ -4,7 +4,7 @@
 
 echo "Running checks..."
 
-# ----- Checks -----
+# ----- Checks: make check is the repository quality gate. -----
 if ! make check; then
   echo "Checks failed. Commit aborted."
   exit 1

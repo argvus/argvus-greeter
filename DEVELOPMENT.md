@@ -1,11 +1,11 @@
 # Development
 
-Argvus Greeter is a Rust GTK4 application used as the graphical greetd frontend
+Argvus Greeter is a Rust Ratatui application used as the TUI greetd frontend
 for Argvus.
 
 ## Requirements
 
-Install Rust and the system libraries used by the GTK4 greeter:
+Install Rust and the terminal/runtime dependencies used by the TUI greeter:
 
 ```sh
 cargo --version
@@ -27,16 +27,16 @@ Without greetd it can still be compiled and inspected, but login cannot proceed.
 
 ## Testing
 
-### Visual checks without greetd
+### TUI checks without greetd
 
 ```sh
 GREETD_SOCK=/dev/null cargo run --release
 ```
 
-This opens the greeter window inside the current desktop session. Everything
-visual can be verified this way: user discovery, avatars, session list, clock
-and CSS styling. Authentication cannot proceed because there is no real greetd
-socket; submit attempts only show an error in the status label.
+This opens the greeter in the current terminal. Verify user discovery, avatars,
+session list, clock, focus traversal and semantic TUI styling. Authentication
+cannot proceed because there is no real greetd socket; submit attempts only show
+an error in the status line.
 
 CSS and image assets are compiled into the binary (`include_str!` /
 `include_bytes!`), so visual changes always require rebuilding before they
@@ -89,6 +89,7 @@ The Arch package installs:
 
 ```text
 /usr/bin/argvus-greeter
+/usr/bin/argvus-greeter-tui
 /usr/bin/argvus-greeter-setup
 /usr/bin/argvus-greeter-session
 /etc/argvus/greeter.toml
@@ -99,7 +100,7 @@ The Arch package installs:
 ```
 
 The package declares `argvus-appearance` and `argvus-session` as runtime
-dependencies because the default wallpaper and session handoff rely on those
+dependencies because the official TUI themes and session handoff rely on those
 component packages. The release workflow installs the official build
 dependencies and runs `makepkg --nodeps` so the greeter package can be built
 before every Argvus component package is present in the public repository.

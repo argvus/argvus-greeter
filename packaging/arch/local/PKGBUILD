@@ -1,19 +1,25 @@
 # Maintainer: William C. Canin
+# Local package recipe: the source archive is supplied by the repository's
+# development packaging helper, allowing sibling local crates to be included.
 pkgname=argvus-greeter
 pkgver=0.4.0
-pkgrel=1
-pkgdesc="Lightweight GTK4 greetd greeter for the Argvus Desktop Environment"
+pkgrel=2
+pkgdesc="Keyboard-first TUI greetd greeter for the Argvus Desktop Environment"
 arch=('x86_64')
 url="https://github.com/argvus/argvus-greeter"
 license=('GPL-3.0-only')
 options=('!debug')
 install="${pkgname}.install"
 depends=(
+  # greetd owns PAM authentication and session handoff.
   'greetd'
-  'gtk4'
+  # Shared terminal/theme/session components are runtime contracts, not build
+  # conveniences; the launcher depends on them after installation.
+  'argvus-app-profiles'
   'argvus-appearance'
   'argvus-session'
   'argvus-i18n'
+  'kitty'
   'hyprland'
   'systemd-libs'
 )
@@ -34,16 +40,21 @@ _cargo_target_dir() {
 }
 
 build() {
+  # Keep Cargo's locked workspace build aligned with CI and reproducible
+  # package metadata.
   cd "${pkgname}-${pkgver}"
   cargo build --workspace --release --locked
 }
 
 check() {
+  # Run the same release-mode tests that guard the shipped binary.
   cd "${pkgname}-${pkgver}"
   cargo test --workspace --release --locked
 }
 
 package() {
+  # Install only the binary, launch helpers, configuration examples, and
+  # documentation required by the greetd integration.
   cd "${pkgname}-${pkgver}"
 
   install -Dm755 "$(_cargo_target_dir)/release/${pkgname}" \
@@ -52,6 +63,8 @@ package() {
     "${pkgdir}/usr/bin/argvus-greeter-setup"
   install -Dm755 packaging/greetd/argvus-greeter-session \
     "${pkgdir}/usr/bin/argvus-greeter-session"
+  install -Dm755 packaging/greetd/argvus-greeter-tui \
+    "${pkgdir}/usr/bin/argvus-greeter-tui"
 
   install -Dm644 packaging/greetd/greeter.toml \
     "${pkgdir}/etc/argvus/greeter.toml"

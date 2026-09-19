@@ -1,3 +1,10 @@
+//! Minimal greetd IPC client used by the login application.
+//!
+//! Authentication is deliberately isolated on a worker thread. The Ratatui
+//! event loop must remain responsive while greetd waits for PAM responses, and
+//! the UI should communicate through typed commands/events rather than owning
+//! a Unix socket directly.
+
 use crate::session::Session;
 use greetd_ipc::{
   AuthMessageType, ErrorType, Request, Response,
@@ -12,12 +19,14 @@ use std::{
 use thiserror::Error;
 use tracing::{error, info, warn};
 
+/// Commands sent from the UI to the greetd worker.
 #[derive(Debug)]
 pub enum Command {
   Begin { username: String, session: Session },
   AuthResponse(Option<String>),
 }
 
+/// Notifications sent by the worker back to the UI.
 #[derive(Debug, Clone)]
 pub enum Event {
   Ready,
@@ -31,12 +40,14 @@ pub enum Event {
   SessionStarted,
 }
 
+/// A prompt received from greetd, including whether its response is secret.
 #[derive(Debug, Clone)]
 pub struct AuthPrompt {
   pub message: String,
   pub secret: bool,
 }
 
+/// Failures that prevent the authentication exchange from continuing.
 #[derive(Debug, Error)]
 enum GreeterError {
   #[error("GREETD_SOCK is not set")]
@@ -47,14 +58,24 @@ enum GreeterError {
   Ipc(#[from] CodecError),
 }
 
+/// Starts the background worker and returns immediately.
+///
+/// The worker owns the mutable IPC state. If the command channel closes, the
+/// thread exits naturally because the parent application is no longer able to
+/// request authentication.
 pub fn spawn_worker(commands: Receiver<Command>, events: Sender<Event>) {
   thread::spawn(move || {
+    // Ready is an informational event, but sending it establishes that the
+    // worker was created before the UI begins issuing commands.
     let _ = events.send(Event::Ready);
+    // Disconnected is the safe state after every failed or completed exchange.
     let mut state = WorkerState::Disconnected;
 
     while let Ok(command) = commands.recv() {
       match command {
         Command::Begin { username, session } => {
+          // A failed begin operation must not leave a partially initialized
+          // socket available for a later password submission.
           state = match begin_session(username, session, &events) {
             Ok(state) => state,
             Err(error) => {
@@ -65,6 +86,8 @@ pub fn spawn_worker(commands: Receiver<Command>, events: Sender<Event>) {
           };
         }
         Command::AuthResponse(response) => {
+          // Responses are valid only while greetd is waiting for an answer to
+          // an authentication prompt.
           let WorkerState::Authenticating {
             mut stream,
             session,
@@ -89,6 +112,7 @@ pub fn spawn_worker(commands: Receiver<Command>, events: Sender<Event>) {
   });
 }
 
+/// Internal state of the greetd protocol exchange.
 enum WorkerState {
   Disconnected,
   Authenticating {
@@ -97,11 +121,15 @@ enum WorkerState {
   },
 }
 
+/// Creates a greetd session for the selected user and session command.
 fn begin_session(
   username: String,
   session: Session,
   events: &Sender<Event>,
 ) -> Result<WorkerState, GreeterError> {
+  // greetd provides the socket path through the environment of the greeter
+  // process; no socket path is guessed because that could target the wrong
+  // session manager instance.
   let socket = env::var("GREETD_SOCK").map_err(|_| GreeterError::MissingSocket)?;
   let mut stream = UnixStream::connect(socket).map_err(GreeterError::Connect)?;
   info!(%username, "connected to greetd");
@@ -110,6 +138,7 @@ fn begin_session(
   handle_response(&mut stream, session, events)
 }
 
+/// Posts one authentication response and continues processing greetd output.
 fn send_auth_response(
   stream: &mut UnixStream,
   response: Option<String>,
@@ -120,6 +149,11 @@ fn send_auth_response(
   handle_response(stream, session, events)
 }
 
+/// Consumes greetd responses until the protocol needs UI input or terminates.
+///
+/// Informational and error messages are acknowledged immediately. Secret and
+/// visible prompts return an `Authenticating` state with a cloned stream so
+/// subsequent UI input can continue the same protocol exchange.
 fn handle_response(
   stream: &mut UnixStream,
   session: Session,
@@ -128,6 +162,8 @@ fn handle_response(
   loop {
     match Response::read_from(stream)? {
       Response::Success => {
+        // Authentication succeeded, so the selected session is handed to
+        // greetd rather than launched by the greeter process itself.
         info!(session = %session.id, "authentication succeeded");
         let _ = events.send(Event::SessionStarting);
         Request::StartSession {
@@ -174,6 +210,8 @@ fn handle_response(
         auth_message,
       } => match auth_message_type {
         AuthMessageType::Secret => {
+          // Returning after a prompt prevents reading past the point where
+          // greetd expects user input.
           let _ = events.send(Event::AuthMessage(AuthPrompt {
             message: auth_message,
             secret: true,
@@ -194,6 +232,7 @@ fn handle_response(
           });
         }
         AuthMessageType::Info => {
+          // Non-interactive messages must be acknowledged to unblock greetd.
           let _ = events.send(Event::Info(auth_message));
           Request::PostAuthMessageResponse { response: None }.write_to(stream)?;
         }

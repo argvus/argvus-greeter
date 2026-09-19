@@ -1,8 +1,10 @@
 # Maintainer: William C. Canin
+# CI recipe: source archives are fetched from the tagged greeter plus the
+# current sibling i18n/TUI checkouts required by the workspace path dependencies.
 pkgname=argvus-greeter
 pkgver=0.4.0
-pkgrel=1
-pkgdesc="Lightweight GTK4 greetd greeter for the Argvus Desktop Environment"
+pkgrel=2
+pkgdesc="Keyboard-first TUI greetd greeter for the Argvus Desktop Environment"
 arch=('x86_64')
 url="https://github.com/argvus/argvus-greeter"
 license=('GPL-3.0-only')
@@ -10,10 +12,11 @@ options=('!debug')
 install="${pkgname}.install"
 depends=(
   'greetd'
-  'gtk4'
+  'argvus-app-profiles'
   'argvus-appearance'
   'argvus-session'
   'argvus-i18n'
+  'kitty'
   'hyprland'
   'systemd-libs'
 )
@@ -29,24 +32,31 @@ backup=(
 source=(
   "${pkgname}-${pkgver}.tar.gz::${url}/archive/refs/tags/v${pkgver}.tar.gz"
   "argvus-i18n-main.tar.gz::https://github.com/argvus/argvus-i18n/archive/refs/heads/main.tar.gz"
+  "argvus-tui-main.tar.gz::https://github.com/argvus/argvus-tui/archive/refs/heads/main.tar.gz"
 )
 sha256sums=()
 
 prepare() {
+  # Normalize downloaded archive directory names to the paths expected by
+  # Cargo's local dependency declarations.
   mv "argvus-i18n-main" "argvus-i18n"
+  mv "argvus-tui-main" "argvus-tui"
 }
 
 build() {
+  # CI verifies the release artifact with the lockfile before packaging.
   cd "${pkgname}-${pkgver}"
   cargo build --workspace --release --locked
 }
 
 check() {
+  # Test the exact workspace that is about to be installed.
   cd "${pkgname}-${pkgver}"
   cargo test --workspace --release --locked
 }
 
 package() {
+  # Keep the payload layout identical to the local package recipe.
   cd "${pkgname}-${pkgver}"
 
   install -Dm755 "target/release/${pkgname}" "${pkgdir}/usr/bin/${pkgname}"
@@ -54,6 +64,8 @@ package() {
     "${pkgdir}/usr/bin/argvus-greeter-setup"
   install -Dm755 packaging/greetd/argvus-greeter-session \
     "${pkgdir}/usr/bin/argvus-greeter-session"
+  install -Dm755 packaging/greetd/argvus-greeter-tui \
+    "${pkgdir}/usr/bin/argvus-greeter-tui"
 
   install -Dm644 packaging/greetd/greeter.toml \
     "${pkgdir}/etc/argvus/greeter.toml"

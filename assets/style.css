@@ -1,4 +1,12 @@
+/*
+ * Legacy GTK stylesheet retained for source compatibility with older builds.
+ * The current executable is Ratatui-based, but keeping these semantic class
+ * names documented helps maintainers understand the visual contract if the
+ * graphical compatibility path is restored.
+ */
+
 * {
+  /* Use the same monospace family selected by the ARGVUS terminal profile. */
   font-family: "IBM Plex Mono", monospace;
   letter-spacing: 0;
 }
@@ -9,6 +17,7 @@ window {
 }
 
 .background-tint {
+  /* Tint is separate from the wallpaper so opacity can be tuned independently. */
   background: rgba(17, 19, 22, 0.58);
 }
 
@@ -28,6 +37,7 @@ window {
 }
 
 .login-panel {
+  /* The panel deliberately uses translucent surfaces over the greeter backdrop. */
   padding: 28px;
   border-radius: 12px;
   background: rgba(17, 19, 22, 0.76);
@@ -36,6 +46,8 @@ window {
 }
 
 .avatar-frame {
+  /* Keep the avatar frame independent from the image so fallback images share
+   * the same geometry and visual emphasis. */
   min-width: 64px;
   min-height: 64px;
   border-radius: 6px;
@@ -45,6 +57,7 @@ window {
 }
 
 .avatar-picture {
+  /* Clip the image inside the frame rather than changing its source pixels. */
   min-width: 58px;
   min-height: 58px;
   border-radius: 4px;
@@ -81,11 +94,13 @@ entry {
 }
 
 entry:focus {
+  /* Focus styling mirrors the active ARGVUS border/accent relationship. */
   border-color: #3590bd;
   box-shadow: 0 0 0 2px rgba(53, 144, 189, 0.22);
 }
 
 button.suggested-action {
+  /* The primary action uses the accent as both fill and border for contrast. */
   background: #3590bd;
   color: #111316;
   border: 1px solid #3590bd;

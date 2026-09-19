@@ -1,3 +1,5 @@
+-- The Lua and .conf variants intentionally express the same minimal session
+-- policy for installations that select either Hyprland configuration format.
 -- Minimal Hyprland configuration for Argvus Greeter.
 -- This intentionally avoids loading the user's full Argvus session before login.
 
@@ -47,5 +49,7 @@ hl.config({
 })
 
 hl.on("hyprland.start", function()
-  hl.exec_cmd("sh -lc '/usr/bin/argvus-greeter; hyprctl dispatch \"hl.dsp.exit()\"'")
+  -- Start through the terminal policy wrapper so Kitty inherits the active
+  -- ARGVUS theme while applying the Greeter-only tab restrictions.
+  hl.exec_cmd("/usr/bin/argvus-greeter-tui")
 end)

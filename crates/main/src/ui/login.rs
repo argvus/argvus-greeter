@@ -1,3 +1,11 @@
+//! Ratatui login screen and keyboard-first interaction state.
+//!
+//! The UI is intentionally a pure stateful view: it receives immutable user
+//! and session discovery results, sends typed authentication commands, and
+//! renders events returned by the worker. Keeping rendering and side effects
+//! separated makes focus behavior testable and prevents the terminal thread
+//! from blocking on greetd or D-Bus operations.
+
 use crate::{
   config::Config,
   greetd::{AuthPrompt, Command, Event},
@@ -7,32 +15,135 @@ use crate::{
   users::User,
 };
 use argvus_i18n::I18n;
-use gtk::gdk_pixbuf::Pixbuf;
-use gtk::{gdk, gio, glib, prelude::*};
-use std::{
-  cell::{Cell, RefCell},
-  path::Path,
-  rc::Rc,
-  sync::Arc,
-  sync::mpsc::{Receiver, Sender},
-  time::Duration,
+use argvus_theme::Theme;
+use argvus_tui::image::ImageSurface;
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use ratatui::{
+  Frame,
+  layout::{Alignment, Constraint, Layout, Margin, Rect},
+  style::{Modifier, Style, Stylize},
+  text::{Line, Span},
+  widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Widget, Wrap},
 };
+use std::{
+  path::PathBuf,
+  sync::{
+    Arc,
+    mpsc::{Receiver, Sender},
+  },
+};
+use time::{OffsetDateTime, macros::format_description};
 
+// Compiled-in fallback keeps the login surface complete when no external
+// avatar source exists or the source cannot be decoded.
 const DEFAULT_AVATAR: &[u8] = include_bytes!("../../../../assets/avatar-default.svg");
-const AVATAR_SIZE_PX: i32 = 64;
-const AVATAR_IMAGE_SIZE_PX: i32 = 58;
-// Textures are decoded at this multiple of the display size so the avatar
-// still looks sharp on HiDPI screens after being scaled down.
-const AVATAR_SUPERSAMPLE: i32 = 2;
 
-pub struct LoginView {
-  window: gtk::ApplicationWindow,
+/// Interactive controls reachable through Tab and Shift-Tab.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Focus {
+  /// Account selector and user list.
+  User,
+  /// Password/PAM response field.
+  Password,
+  /// Wayland session selector.
+  Session,
+  /// Login action.
+  Login,
+  /// Power action menu.
+  Power,
 }
 
-impl LoginView {
+impl Focus {
+  // The array is the single source of truth for keyboard focus order.
+  const ALL: [Self; 5] = [
+    Self::User,
+    Self::Password,
+    Self::Session,
+    Self::Login,
+    Self::Power,
+  ];
+
+  /// Advances focus in the same order presented by the login form.
+  fn next(self) -> Self {
+    let index = Self::ALL.iter().position(|item| *item == self).unwrap_or(0);
+    Self::ALL[(index + 1) % Self::ALL.len()]
+  }
+
+  /// Moves focus backwards, wrapping from the first control to the last.
+  fn previous(self) -> Self {
+    let index = Self::ALL.iter().position(|item| *item == self).unwrap_or(0);
+    Self::ALL[(index + Self::ALL.len() - 1) % Self::ALL.len()]
+  }
+}
+
+/// Complete in-memory state for the login screen.
+///
+/// Fields that represent external effects (`commands`, `events`) are kept
+/// alongside visual state so a single event loop can coordinate rendering and
+/// authentication without sharing mutable state across threads.
+pub struct LoginApp {
+  /// Read-only presentation and session preferences.
+  config: Config,
+  /// Accounts discovered before the TUI started.
+  users: Vec<User>,
+  /// Validated Wayland sessions available to greetd.
+  sessions: Vec<Session>,
+  /// Shared translation catalog for all user-facing text.
+  i18n: Arc<I18n>,
+  /// Commands sent to the background greetd worker.
+  commands: Sender<Command>,
+  /// Authentication and lifecycle events from the worker.
+  events: Receiver<Event>,
+  /// Resolved ARGVUS semantic colors.
+  theme: Theme,
+  /// Current decoded avatar or the built-in fallback.
+  avatar: Option<ImageSurface>,
+  /// Source path used to avoid decoding the same avatar on every frame.
+  avatar_key: Option<PathBuf>,
+  /// Current keyboard focus.
+  focus: Focus,
+  /// Selected account index in `users`.
+  selected_user: usize,
+  /// Selected session index in `sessions`.
+  selected_session: usize,
+  /// Current response text; cleared after submission or failure.
+  password: String,
+  /// Most recent prompt metadata returned by greetd.
+  prompt: AuthPrompt,
+  /// Whether the next Enter submits a response to an active prompt.
+  waiting_for_prompt: bool,
+  /// Initial password entered before greetd emits its secret prompt.
+  pending_secret_response: Option<String>,
+  /// Status message and semantic severity shown below the form.
+  status: Option<(String, StatusKind)>,
+  /// Whether the power overlay is currently visible.
+  power_open: bool,
+  /// Selected action inside the power overlay.
+  power_selected: usize,
+  /// Signals the outer application loop to leave the terminal.
+  pub quit: bool,
+}
+
+/// Semantic class used to select status colors without embedding colors in
+/// authentication logic.
+#[derive(Debug, Clone, Copy)]
+enum StatusKind {
+  /// Non-error progress or informational text.
+  Info,
+  /// A recoverable authentication or system error.
+  Error,
+  /// A successfully requested or completed action.
+  Success,
+}
+
+impl LoginApp {
+  /// Creates a login state and initializes the first avatar/empty-state view.
+  ///
+  /// The default session is selected by discovery metadata, while user focus
+  /// starts at the account selector so keyboard users have a predictable entry
+  /// point.
   #[allow(clippy::too_many_arguments)]
   pub fn new(
-    app: &gtk::Application,
     config: Config,
     users: Vec<User>,
     sessions: Vec<Session>,
@@ -40,569 +151,691 @@ impl LoginView {
     commands: Sender<Command>,
     events: Receiver<Event>,
   ) -> Self {
-    let widgets = Widgets::new(app, &config, &users, &sessions, &i18n);
-    let state = Rc::new(State {
-      users,
-      sessions,
-      commands,
-      events: RefCell::new(events),
-      waiting_for_prompt: Cell::new(false),
-      active_prompt: RefCell::new(None),
-      pending_secret_response: RefCell::new(None),
-      i18n,
-    });
-
-    wire_clock(&widgets, &config);
-    wire_user_selection(&widgets, state.clone());
-    wire_login(&widgets, state.clone());
-    poll_events(&widgets, state);
-
-    Self {
-      window: widgets.window,
-    }
-  }
-
-  pub fn present(&self) {
-    self.window.present();
-  }
-}
-
-struct State {
-  users: Vec<User>,
-  sessions: Vec<Session>,
-  commands: Sender<Command>,
-  events: RefCell<Receiver<Event>>,
-  waiting_for_prompt: Cell<bool>,
-  active_prompt: RefCell<Option<AuthPrompt>>,
-  pending_secret_response: RefCell<Option<String>>,
-  i18n: Arc<I18n>,
-}
-
-#[derive(Clone)]
-struct Widgets {
-  i18n: Arc<I18n>,
-  window: gtk::ApplicationWindow,
-  user_dropdown: gtk::DropDown,
-  session_dropdown: gtk::DropDown,
-  avatar: gtk::Picture,
-  default_avatar: Option<gdk::Texture>,
-  display_name: gtk::Label,
-  prompt_label: gtk::Label,
-  auth_entry: gtk::Entry,
-  submit_button: gtk::Button,
-  status_label: gtk::Label,
-  clock_label: gtk::Label,
-  date_label: gtk::Label,
-}
-
-impl Widgets {
-  fn new(
-    app: &gtk::Application,
-    config: &Config,
-    users: &[User],
-    sessions: &[Session],
-    i18n: &I18n,
-  ) -> Self {
-    let window = gtk::ApplicationWindow::builder()
-      .application(app)
-      .title(i18n.tr("title"))
-      .default_width(1280)
-      .default_height(720)
-      .build();
-    window.fullscreen();
-
-    let overlay = gtk::Overlay::new();
-    window.set_child(Some(&overlay));
-
-    let background = if config.appearance.wallpaper.is_file() {
-      gtk::Picture::for_filename(&config.appearance.wallpaper)
-    } else {
-      gtk::Picture::new()
-    };
-    background.set_can_shrink(false);
-    background.set_content_fit(gtk::ContentFit::Cover);
-    overlay.set_child(Some(&background));
-
-    let tint = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    tint.add_css_class("background-tint");
-    overlay.add_overlay(&tint);
-
-    let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    root.add_css_class("screen");
-    overlay.add_overlay(&root);
-
-    let top = gtk::Box::new(gtk::Orientation::Vertical, 2);
-    top.set_halign(gtk::Align::Center);
-    top.set_margin_top(52);
-    top.add_css_class("clock");
-
-    let clock_label = gtk::Label::new(None);
-    clock_label.add_css_class("clock-time");
-    let date_label = gtk::Label::new(None);
-    date_label.add_css_class("clock-date");
-    top.append(&clock_label);
-    top.append(&date_label);
-    root.append(&top);
-
-    let center = gtk::CenterBox::new();
-    center.set_vexpand(true);
-    root.append(&center);
-
-    let form = gtk::Box::new(gtk::Orientation::Vertical, 16);
-    form.set_width_request(340);
-    form.set_halign(gtk::Align::Center);
-    form.set_valign(gtk::Align::Center);
-    form.add_css_class("login-panel");
-    center.set_center_widget(Some(&form));
-
-    let avatar_frame = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    avatar_frame.set_size_request(AVATAR_SIZE_PX, AVATAR_SIZE_PX);
-    avatar_frame.set_hexpand(false);
-    avatar_frame.set_vexpand(false);
-    avatar_frame.set_halign(gtk::Align::Center);
-    avatar_frame.set_valign(gtk::Align::Center);
-    avatar_frame.set_overflow(gtk::Overflow::Hidden);
-    avatar_frame.add_css_class("avatar-frame");
-
-    let avatar = gtk::Picture::new();
-    avatar.set_size_request(AVATAR_IMAGE_SIZE_PX, AVATAR_IMAGE_SIZE_PX);
-    avatar.set_content_fit(gtk::ContentFit::Cover);
-    avatar.set_hexpand(false);
-    avatar.set_vexpand(false);
-    avatar.set_can_shrink(true);
-    avatar.set_halign(gtk::Align::Center);
-    avatar.set_valign(gtk::Align::Center);
-    avatar.set_overflow(gtk::Overflow::Hidden);
-    avatar.add_css_class("avatar-picture");
-
-    avatar_frame.append(&avatar);
-    form.append(&avatar_frame);
-    let default_avatar = load_default_avatar();
-
-    let display_name = gtk::Label::new(None);
-    display_name.add_css_class("display-name");
-    form.append(&display_name);
-
-    let user_names = users
-      .iter()
-      .map(|user| user.display_name.as_str())
-      .collect::<Vec<_>>();
-    let user_dropdown = gtk::DropDown::from_strings(&user_names);
-    user_dropdown.set_hexpand(true);
-    user_dropdown.add_css_class("compact-select");
-    form.append(&user_dropdown);
-
-    let prompt_label = gtk::Label::new(Some(&i18n.tr("password")));
-    prompt_label.add_css_class("prompt-label");
-    prompt_label.set_halign(gtk::Align::Start);
-    form.append(&prompt_label);
-
-    let auth_entry = gtk::Entry::new();
-    auth_entry.set_visibility(false);
-    auth_entry.set_placeholder_text(Some(&i18n.tr("password")));
-    auth_entry.set_activates_default(true);
-    form.append(&auth_entry);
-
-    let submit_button = gtk::Button::with_label(&i18n.tr("login"));
-    submit_button.add_css_class("suggested-action");
-    submit_button.set_receives_default(true);
-    form.append(&submit_button);
-    window.set_default_widget(Some(&submit_button));
-
-    let status_label = gtk::Label::new(None);
-    status_label.set_wrap(true);
-    status_label.add_css_class("status");
-    form.append(&status_label);
-
-    let bottom = gtk::Box::new(gtk::Orientation::Horizontal, 12);
-    bottom.set_margin_bottom(36);
-    bottom.set_margin_start(36);
-    bottom.set_margin_end(36);
-    bottom.add_css_class("bottom-bar");
-    root.append(&bottom);
-
-    let session_names = sessions
-      .iter()
-      .map(|session| session.name.as_str())
-      .collect::<Vec<_>>();
-    let session_dropdown = gtk::DropDown::from_strings(&session_names);
-    let default_session = sessions
+    // Discovery already computed the configured default, so this lookup keeps
+    // configuration policy out of the rendering layer.
+    let selected_session = sessions
       .iter()
       .position(|session| session.is_default)
       .unwrap_or(0);
-    session_dropdown.set_selected(default_session as u32);
-    session_dropdown.add_css_class("session-select");
-    bottom.append(&session_dropdown);
-
-    let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    spacer.set_hexpand(true);
-    bottom.append(&spacer);
-
-    let power_button = power_menu(i18n);
-    bottom.append(&power_button);
-
-    let widgets = Self {
-      i18n: Arc::new(i18n.clone()),
-      window,
-      user_dropdown,
-      session_dropdown,
-      avatar,
-      default_avatar,
-      display_name,
-      prompt_label,
-      auth_entry,
-      submit_button,
-      status_label,
-      clock_label,
-      date_label,
+    // Build the complete state before loading the avatar so all fallback paths
+    // can use the final selected-user index.
+    let mut app = Self {
+      config,
+      users,
+      sessions,
+      i18n,
+      commands,
+      events,
+      // Theme::load is the shared ARGVUS source of semantic UI colors.
+      theme: Theme::load(),
+      avatar: None,
+      avatar_key: None,
+      focus: Focus::User,
+      selected_user: 0,
+      selected_session,
+      password: String::new(),
+      prompt: AuthPrompt {
+        message: String::new(),
+        secret: true,
+      },
+      waiting_for_prompt: false,
+      pending_secret_response: None,
+      status: None,
+      power_open: false,
+      power_selected: 0,
+      quit: false,
     };
-    update_selected_user(&widgets, users);
-    update_empty_state(&widgets, users, sessions);
-    widgets
-  }
-}
-
-fn wire_clock(widgets: &Widgets, config: &Config) {
-  if !config.appearance.show_clock {
-    widgets.clock_label.set_visible(false);
-    widgets.date_label.set_visible(false);
-    return;
+    // The account area always renders an image, using the default asset when
+    // the selected user has no usable external avatar.
+    app.refresh_avatar();
+    app.set_empty_state();
+    app
   }
 
-  widgets.date_label.set_visible(config.appearance.show_date);
-  update_clock(widgets);
-
-  let widgets = widgets.clone();
-  glib::timeout_add_local(Duration::from_secs(1), move || {
-    update_clock(&widgets);
-    glib::ControlFlow::Continue
-  });
-}
-
-fn update_clock(widgets: &Widgets) {
-  match glib::DateTime::now_local() {
-    Ok(now) => {
-      if let Ok(time) = now.format("%H:%M") {
-        widgets.clock_label.set_text(&time);
-      }
-      let format = widgets.i18n.tr("date_format");
-      if let Ok(date) = now.format(&format) {
-        widgets.date_label.set_text(&date);
-      }
+  /// Renders the complete screen, including the optional power overlay.
+  ///
+  /// The small-terminal guard prevents Ratatui widgets and image protocols
+  /// from competing for a region too small to remain legible.
+  pub fn draw(&mut self, frame: &mut Frame) {
+    let area = frame.area();
+    if area.width < argvus_tui::MIN_WIDTH || area.height < argvus_tui::MIN_HEIGHT {
+      argvus_tui::chrome::draw_too_small(
+        frame,
+        area,
+        &self.theme,
+        &self.i18n.tr("terminal_window_is_too_small"),
+        &self.i18n.tr("minimum_size"),
+        &self.i18n.tr("current_size"),
+      );
+      return;
     }
-    Err(error) => tracing::warn!(%error, "could not read local time"),
+
+    // The outer frame establishes a consistent ARGVUS background and border
+    // before child widgets draw their own focused panels.
+    Block::new()
+      .borders(Borders::ALL)
+      .border_style(Style::new().fg(self.theme.border_active))
+      .bg(self.theme.background)
+      .render(area, frame.buffer_mut());
+    let inner = area.inner(Margin::new(1, 1));
+    // Header, clock, main content, and footer use fixed chrome heights; the
+    // body receives all remaining space for user/session content.
+    let rows = Layout::vertical([
+      Constraint::Length(1),
+      Constraint::Length(2),
+      Constraint::Min(1),
+      Constraint::Length(2),
+    ])
+    .split(inner);
+    argvus_tui::chrome::draw_header(
+      frame,
+      rows[0],
+      &self.theme,
+      argvus_tui::chrome::Header {
+        title: &self.i18n.tr("title"),
+        version: None,
+        version_label: "",
+      },
+    );
+    self.draw_clock(frame, rows[1]);
+    self.draw_body(frame, rows[2]);
+    self.draw_footer(frame, rows[3]);
+
+    if self.power_open {
+      self.draw_power_menu(frame, area);
+    }
   }
-}
 
-fn wire_user_selection(widgets: &Widgets, state: Rc<State>) {
-  let widgets = widgets.clone();
-  widgets
-    .user_dropdown
-    .clone()
-    .connect_selected_notify(move |_| {
-      update_selected_user(&widgets, &state.users);
-    });
-}
+  /// Draws the optional local clock and date without affecting form state.
+  fn draw_clock(&self, frame: &mut Frame, area: Rect) {
+    if !self.config.appearance.show_clock {
+      return;
+    }
+    // Local time is best effort because the login process may lack a complete
+    // timezone environment. The epoch fallback keeps rendering infallible.
+    let now = OffsetDateTime::now_local().unwrap_or(OffsetDateTime::UNIX_EPOCH);
+    let time = now
+      .format(&format_description!("[hour]:[minute]"))
+      .unwrap_or_else(|_| "00:00".to_string());
+    let date = if self.config.appearance.show_date {
+      now
+        .format(&format_description!("[year]-[month]-[day]"))
+        .unwrap_or_else(|_| "1970-01-01".to_string())
+    } else {
+      String::new()
+    };
+    frame.render_widget(
+      Paragraph::new(Line::from(vec![
+        Span::styled(
+          time,
+          Style::new()
+            .fg(self.theme.foreground)
+            .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+          if date.is_empty() {
+            String::new()
+          } else {
+            format!("  {date}")
+          },
+          Style::new().fg(self.theme.muted),
+        ),
+      ])),
+      area,
+    );
+  }
 
-fn wire_login(widgets: &Widgets, state: Rc<State>) {
-  let submit_widgets = widgets.clone();
-  let submit_state = state.clone();
-  widgets.submit_button.connect_clicked(move |_| {
-    submit(&submit_widgets, &submit_state);
-  });
+  /// Splits the body between account navigation and authentication controls.
+  fn draw_body(&mut self, frame: &mut Frame, area: Rect) {
+    let columns =
+      Layout::horizontal([Constraint::Percentage(38), Constraint::Percentage(62)]).split(area);
+    self.draw_users(frame, columns[0]);
+    self.draw_login_panel(frame, columns[1]);
+  }
 
-  let entry_widgets = widgets.clone();
-  widgets.auth_entry.connect_activate(move |_| {
-    submit(&entry_widgets, &state);
-  });
-}
+  /// Renders the account list and its focused selection state.
+  fn draw_users(&self, frame: &mut Frame, area: Rect) {
+    let title = format!(" {} ", self.i18n.tr("users"));
+    let items = if self.users.is_empty() {
+      vec![ListItem::new(self.i18n.tr("no_local_login_users"))]
+    } else {
+      self
+        .users
+        .iter()
+        .enumerate()
+        .map(|(index, user)| {
+          // The icon communicates avatar availability without exposing the
+          // underlying filesystem path to the person logging in.
+          let avatar = if user.avatar.is_some() {
+            "󰀄 "
+          } else {
+            "󰀉 "
+          };
+          let style = if index == self.selected_user && self.focus == Focus::User {
+            Style::new()
+              .fg(self.theme.selected_foreground)
+              .bg(self.theme.selected_background)
+              .add_modifier(Modifier::BOLD)
+          } else {
+            Style::new().fg(self.theme.foreground)
+          };
+          ListItem::new(format!("{avatar}{}", user.display_name)).style(style)
+        })
+        .collect()
+    };
+    let border = if self.focus == Focus::User {
+      self.theme.border_active
+    } else {
+      self.theme.border
+    };
+    frame.render_widget(
+      List::new(items)
+        .block(
+          Block::bordered()
+            .title(title)
+            .border_style(Style::new().fg(border)),
+        )
+        .highlight_style(
+          Style::new()
+            .fg(self.theme.selected_foreground)
+            .bg(self.theme.selected_background),
+        ),
+      area,
+    );
+  }
 
-fn submit(widgets: &Widgets, state: &State) {
-  if state.waiting_for_prompt.get() {
-    let response = widgets.auth_entry.text().to_string();
-    widgets.auth_entry.set_text("");
-    widgets.submit_button.set_sensitive(false);
-    widgets.status_label.set_text("");
-    state.waiting_for_prompt.set(false);
+  /// Renders the account preview, password response, session selector, login
+  /// action, and status line.
+  fn draw_login_panel(&mut self, frame: &mut Frame, area: Rect) {
+    let inner = area.inner(Margin::new(2, 1));
+    // The account row is taller than the other controls so the avatar can be
+    // framed without collapsing its image protocol target to one cell.
+    let rows = Layout::vertical([
+      Constraint::Length(5),
+      Constraint::Length(3),
+      Constraint::Length(3),
+      Constraint::Length(3),
+      Constraint::Min(3),
+    ])
+    .split(inner);
+    let selected_name = self
+      .users
+      .get(self.selected_user)
+      .map(|user| user.display_name.as_str())
+      .unwrap_or("ARGVUS");
+    // Account focus is represented by the password/login controls because the
+    // account preview itself is informational after selection.
+    let border = if matches!(self.focus, Focus::Password | Focus::Login) {
+      self.theme.border_active
+    } else {
+      self.theme.border
+    };
+    frame.render_widget(
+      Block::bordered()
+        .title(self.i18n.tr("account"))
+        .border_style(Style::new().fg(border)),
+      rows[0],
+    );
+    let account_columns = Layout::horizontal([Constraint::Length(12), Constraint::Min(1)])
+      .split(rows[0].inner(Margin::new(1, 0)));
+    if let Some(avatar) = self.avatar.as_mut() {
+      // Draw the frame first and render the image into its inner rectangle so
+      // the border remains visible for both Kitty graphics and text fallback.
+      let avatar_area = account_columns[0];
+      frame.render_widget(
+        Block::bordered().border_style(Style::new().fg(border)),
+        avatar_area,
+      );
+      avatar.render(
+        frame,
+        avatar_area.inner(Margin::new(1, 1)),
+        self.theme.background,
+        self.theme.accent,
+      );
+    }
+    // Only the selected account name is shown here. The actual avatar source
+    // is an implementation detail and must not be presented as login text.
+    frame.render_widget(
+      Paragraph::new(Line::from(Span::styled(
+        selected_name,
+        Style::new()
+          .fg(self.theme.foreground)
+          .add_modifier(Modifier::BOLD),
+      )))
+      .alignment(Alignment::Left),
+      account_columns[1],
+    );
+    let prompt = if self.prompt.message.is_empty() {
+      self.i18n.tr("password")
+    } else {
+      i18n::auth_message(&self.i18n, &self.prompt.message)
+    };
+    let password = if self.prompt.secret {
+      "•".repeat(self.password.chars().count())
+    } else {
+      self.password.clone()
+    };
+    frame.render_widget(
+      Paragraph::new(password).block(Block::bordered().title(prompt).border_style(
+        Style::new().fg(if self.focus == Focus::Password {
+          self.theme.border_active
+        } else {
+          self.theme.border
+        }),
+      )),
+      rows[1],
+    );
+    let session = self
+      .sessions
+      .get(self.selected_session)
+      .map(|item| item.name.as_str())
+      .unwrap_or("-");
+    let session_style = if self.focus == Focus::Session {
+      Style::new()
+        .fg(self.theme.selected_foreground)
+        .bg(self.theme.selected_background)
+    } else {
+      Style::new().fg(self.theme.foreground)
+    };
+    frame.render_widget(
+      Paragraph::new(Line::from(Span::styled(
+        format!("‹ {session} ›"),
+        session_style,
+      )))
+      .block(
+        Block::bordered()
+          .title(self.i18n.tr("session"))
+          .border_style(Style::new().fg(if self.focus == Focus::Session {
+            self.theme.border_active
+          } else {
+            self.theme.border
+          })),
+      ),
+      rows[2],
+    );
+    let login_style = if self.focus == Focus::Login {
+      Style::new()
+        .fg(self.theme.selected_foreground)
+        .bg(self.theme.accent)
+        .add_modifier(Modifier::BOLD)
+    } else {
+      Style::new()
+        .fg(self.theme.foreground)
+        .bg(self.theme.surface)
+    };
+    frame.render_widget(
+      Paragraph::new(Line::from(Span::styled(
+        format!("  {}  ", self.i18n.tr("login")),
+        login_style,
+      )))
+      .alignment(Alignment::Center)
+      .block(
+        Block::bordered().border_style(Style::new().fg(if self.focus == Focus::Login {
+          self.theme.accent
+        } else {
+          self.theme.border
+        })),
+      ),
+      rows[3],
+    );
+    let status = self
+      .status
+      .as_ref()
+      .map(|(text, kind)| {
+        let color = match kind {
+          StatusKind::Info => self.theme.muted,
+          StatusKind::Error => self.theme.error,
+          StatusKind::Success => self.theme.success,
+        };
+        Line::from(Span::styled(text.clone(), Style::new().fg(color)))
+      })
+      .unwrap_or_else(|| {
+        Line::from(Span::styled(
+          self.i18n.tr("select_user_help"),
+          Style::new().fg(self.theme.muted),
+        ))
+      });
+    frame.render_widget(Paragraph::new(status).wrap(Wrap { trim: true }), rows[4]);
+  }
 
-    if state
+  /// Renders the keyboard help line shared by all normal login states.
+  fn draw_footer(&self, frame: &mut Frame, area: Rect) {
+    frame.render_widget(
+      Paragraph::new(self.i18n.tr("navigation_help"))
+        .alignment(Alignment::Right)
+        .style(Style::new().fg(self.theme.muted).bg(self.theme.surface)),
+      area,
+    );
+  }
+
+  /// Draws a centered power menu above the normal screen contents.
+  fn draw_power_menu(&self, frame: &mut Frame, area: Rect) {
+    // Clear prevents the underlying form from visually leaking through the
+    // modal while retaining the terminal's current background.
+    let popup = argvus_tui::chrome::centered(area, area.width.min(42), 9);
+    frame.render_widget(Clear, popup);
+    let actions = [
+      PowerAction::Shutdown,
+      PowerAction::Restart,
+      PowerAction::Suspend,
+    ];
+    let items = actions
+      .iter()
+      .enumerate()
+      .map(|(index, action)| {
+        let style = if index == self.power_selected {
+          Style::new()
+            .fg(self.theme.selected_foreground)
+            .bg(self.theme.selected_background)
+            .add_modifier(Modifier::BOLD)
+        } else {
+          Style::new().fg(self.theme.foreground)
+        };
+        ListItem::new(action.label(&self.i18n)).style(style)
+      })
+      .collect::<Vec<_>>();
+    frame.render_widget(
+      List::new(items).block(
+        Block::bordered()
+          .title(self.i18n.tr("power"))
+          .border_style(Style::new().fg(self.theme.border_active)),
+      ),
+      popup,
+    );
+  }
+
+  /// Reuses the decoded image when the selected account has not changed.
+  ///
+  /// The fallback is loaded from bytes so no user-controlled path is needed
+  /// for the default presentation.
+  fn refresh_avatar(&mut self) {
+    let key = self
+      .users
+      .get(self.selected_user)
+      .and_then(|user| user.avatar.clone());
+    // Avoid decoding and reinitializing the Kitty/iTerm/sixel protocol on
+    // every frame when keyboard input did not change the selected account.
+    if key == self.avatar_key && self.avatar.is_some() {
+      return;
+    }
+    self.avatar_key = key.clone();
+    self.avatar = key
+      .as_deref()
+      .and_then(ImageSurface::from_path)
+      .or_else(|| ImageSurface::from_bytes(DEFAULT_AVATAR, true));
+  }
+
+  /// Handles one terminal key event and updates only local UI state.
+  ///
+  /// Authentication and power actions are sent to their respective owners;
+  /// this method never performs blocking I/O directly on the TUI thread.
+  pub fn handle_key(&mut self, key: KeyEvent) {
+    if key.kind != KeyEventKind::Press {
+      return;
+    }
+    if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+      // Ctrl+C is the emergency escape path for development and recovery.
+      self.quit = true;
+      return;
+    }
+    if self.power_open {
+      // The modal owns all keys while open so normal form controls cannot be
+      // activated behind it.
+      self.handle_power_key(key.code);
+      return;
+    }
+    match key.code {
+      KeyCode::Tab => self.focus = self.focus.next(),
+      KeyCode::BackTab => self.focus = self.focus.previous(),
+      KeyCode::Up | KeyCode::Char('k') => self.move_vertical(-1),
+      KeyCode::Down | KeyCode::Char('j') => self.move_vertical(1),
+      KeyCode::Left | KeyCode::Char('h') if self.focus == Focus::Session => self.move_session(-1),
+      KeyCode::Right | KeyCode::Char('l') if self.focus == Focus::Session => self.move_session(1),
+      KeyCode::Char(character) if self.focus == Focus::Password => self.password.push(character),
+      KeyCode::Backspace if self.focus == Focus::Password => {
+        self.password.pop();
+      }
+      KeyCode::Enter => self.activate_focus(),
+      KeyCode::Esc => self.cancel_input(),
+      _ => {}
+    }
+    // Avatar refresh is cheap when the selected user is unchanged and ensures
+    // selection changes become visible in the same event cycle.
+    self.refresh_avatar();
+  }
+
+  /// Moves the active indexed control vertically, with wrap-around behavior.
+  fn move_vertical(&mut self, delta: isize) {
+    match self.focus {
+      Focus::User => self.selected_user = move_index(self.selected_user, self.users.len(), delta),
+      Focus::Session => {
+        self.selected_session = move_index(self.selected_session, self.sessions.len(), delta)
+      }
+      Focus::Power => self.power_selected = move_index(self.power_selected, 3, delta),
+      _ => {}
+    }
+  }
+
+  /// Changes the selected session when focus is on the session control.
+  fn move_session(&mut self, delta: isize) {
+    self.selected_session = move_index(self.selected_session, self.sessions.len(), delta);
+  }
+
+  /// Executes the action associated with the currently focused control.
+  fn activate_focus(&mut self) {
+    match self.focus {
+      Focus::User => self.focus = Focus::Password,
+      Focus::Password => self.submit(),
+      Focus::Session => self.focus = Focus::Login,
+      Focus::Login => self.submit(),
+      Focus::Power => self.power_open = true,
+    }
+  }
+
+  /// Cancels the current password entry or returns focus to account selection.
+  fn cancel_input(&mut self) {
+    if !self.password.is_empty() {
+      self.password.clear();
+      self.status = None;
+    } else {
+      self.focus = Focus::User;
+    }
+  }
+
+  /// Handles navigation and activation inside the power modal.
+  fn handle_power_key(&mut self, key: KeyCode) {
+    match key {
+      KeyCode::Esc => self.power_open = false,
+      KeyCode::Up | KeyCode::Char('k') => {
+        self.power_selected = move_index(self.power_selected, 3, -1)
+      }
+      KeyCode::Down | KeyCode::Char('j') => {
+        self.power_selected = move_index(self.power_selected, 3, 1)
+      }
+      KeyCode::Enter => {
+        // The selected index is bounded by move_index, making this fixed array
+        // safe while keeping the menu order explicit.
+        let action = [
+          PowerAction::Shutdown,
+          PowerAction::Restart,
+          PowerAction::Suspend,
+        ][self.power_selected];
+        match power::request(action) {
+          Ok(()) => self.status = Some((self.i18n.tr("power_requested"), StatusKind::Success)),
+          Err(error) => {
+            self.status = Some((
+              format!("{}: {error}", self.i18n.tr("power_failed")),
+              StatusKind::Error,
+            ))
+          }
+        }
+        self.power_open = false;
+      }
+      _ => {}
+    }
+  }
+
+  /// Starts authentication or posts the response to the active PAM prompt.
+  fn submit(&mut self) {
+    if self.waiting_for_prompt {
+      // `take` clears the secret immediately after ownership moves to the
+      // worker, minimizing how long credentials remain in UI state.
+      let response = std::mem::take(&mut self.password);
+      self.waiting_for_prompt = false;
+      if self
+        .commands
+        .send(Command::AuthResponse(Some(response)))
+        .is_err()
+      {
+        self.set_error("internal_channel_unavailable");
+      }
+      return;
+    }
+    let Some(user) = self.users.get(self.selected_user) else {
+      self.set_error("no_login_user");
+      return;
+    };
+    let Some(session) = self.sessions.get(self.selected_session) else {
+      self.set_error("no_wayland_session");
+      return;
+    };
+    // Some PAM stacks request a password only after CreateSession; retain an
+    // initial response so it can be posted automatically when that prompt
+    // arrives.
+    let initial = std::mem::take(&mut self.password);
+    self.pending_secret_response = (!initial.is_empty()).then_some(initial);
+    self.status = Some((self.i18n.tr("starting_authentication"), StatusKind::Info));
+    self.focus = Focus::Password;
+    if self
       .commands
-      .send(Command::AuthResponse(Some(response)))
+      .send(Command::Begin {
+        username: user.username.clone(),
+        session: session.clone(),
+      })
       .is_err()
     {
-      widgets
-        .status_label
-        .set_text(&state.i18n.tr("internal_channel_unavailable"));
+      self.set_error("internal_channel_unavailable");
     }
-    return;
   }
 
-  let Some(user) = selected_user(widgets, &state.users) else {
-    widgets
-      .status_label
-      .set_text(&state.i18n.tr("no_login_user"));
-    return;
-  };
-  let Some(session) = selected_session(widgets, &state.sessions) else {
-    widgets
-      .status_label
-      .set_text(&state.i18n.tr("no_wayland_session"));
-    return;
-  };
-
-  let initial_response = widgets.auth_entry.text().to_string();
-  widgets.auth_entry.set_text("");
-  widgets.auth_entry.set_sensitive(false);
-  widgets.submit_button.set_sensitive(false);
-  widgets
-    .status_label
-    .set_text(&state.i18n.tr("starting_authentication"));
-  if initial_response.is_empty() {
-    state.pending_secret_response.replace(None);
-  } else {
-    state
-      .pending_secret_response
-      .replace(Some(initial_response));
-  }
-  tracing::info!(user = %user.username, session = %session.id, "selected session");
-
-  if state
-    .commands
-    .send(Command::Begin {
-      username: user.username.clone(),
-      session: session.clone(),
-    })
-    .is_err()
-  {
-    widgets
-      .status_label
-      .set_text(&state.i18n.tr("internal_channel_unavailable"));
-  }
-}
-
-fn poll_events(widgets: &Widgets, state: Rc<State>) {
-  let widgets = widgets.clone();
-  glib::timeout_add_local(Duration::from_millis(50), move || {
-    while let Ok(event) = state.events.borrow_mut().try_recv() {
-      handle_event(&widgets, &state, event);
+  /// Drains all currently available worker events without blocking rendering.
+  pub fn poll_events(&mut self) {
+    while let Ok(event) = self.events.try_recv() {
+      self.handle_event(event);
     }
-    glib::ControlFlow::Continue
-  });
-}
+  }
 
-fn handle_event(widgets: &Widgets, state: &State, event: Event) {
-  match event {
-    Event::Ready => {}
-    Event::AuthMessage(prompt) => {
-      if prompt.secret
-        && let Some(response) = state.pending_secret_response.borrow_mut().take()
-      {
-        if state
-          .commands
-          .send(Command::AuthResponse(Some(response)))
-          .is_err()
+  /// Applies one worker event to the visible login state.
+  fn handle_event(&mut self, event: Event) {
+    match event {
+      Event::Ready => {}
+      Event::AuthMessage(prompt) => {
+        // A secret prompt may arrive after the user already entered a
+        // password; post that pending response without displaying it again.
+        if prompt.secret
+          && let Some(response) = self.pending_secret_response.take()
         {
-          widgets
-            .status_label
-            .set_text(&state.i18n.tr("internal_channel_unavailable"));
+          let _ = self.commands.send(Command::AuthResponse(Some(response)));
+          return;
         }
-        return;
+        self.prompt = prompt;
+        self.waiting_for_prompt = true;
+        self.focus = Focus::Password;
+        self.status = None;
       }
-
-      let message = i18n::auth_message(&state.i18n, &prompt.message);
-      widgets.auth_entry.set_sensitive(true);
-      widgets.auth_entry.set_visibility(!prompt.secret);
-      widgets.auth_entry.set_placeholder_text(Some(&message));
-      widgets.prompt_label.set_text(&message);
-      widgets.submit_button.set_sensitive(true);
-      widgets.status_label.set_text("");
-      widgets.auth_entry.grab_focus();
-      state.waiting_for_prompt.set(true);
-      state.active_prompt.replace(Some(prompt));
-    }
-    Event::Info(message) => {
-      let message = i18n::auth_message(&state.i18n, &message);
-      widgets.status_label.set_text(&message);
-    }
-    Event::Error(message) => {
-      let message = i18n::auth_message(&state.i18n, &message);
-      widgets.auth_entry.set_text("");
-      widgets.auth_entry.set_sensitive(true);
-      widgets.submit_button.set_sensitive(true);
-      widgets.status_label.set_text(&message);
-      state.waiting_for_prompt.set(false);
-      state.active_prompt.replace(None);
-      state.pending_secret_response.replace(None);
-    }
-    Event::AuthFailed(message) => {
-      let translated = i18n::auth_message(&state.i18n, &message);
-      widgets.auth_entry.set_text("");
-      widgets.auth_entry.set_sensitive(true);
-      widgets.submit_button.set_sensitive(true);
-      let status = if message.is_empty() {
-        state.i18n.tr("authentication_failed")
-      } else {
-        translated
-      };
-      widgets.status_label.set_text(&status);
-      state.waiting_for_prompt.set(false);
-      state.active_prompt.replace(None);
-      state.pending_secret_response.replace(None);
-      widgets.auth_entry.grab_focus();
-    }
-    Event::AuthPromptUnavailable => {
-      widgets
-        .status_label
-        .set_text(&state.i18n.tr("no_active_auth_prompt"));
-      widgets.auth_entry.set_sensitive(true);
-      widgets.submit_button.set_sensitive(true);
-      state.waiting_for_prompt.set(false);
-      state.active_prompt.replace(None);
-    }
-    Event::GreeterUnavailable => {
-      widgets
-        .status_label
-        .set_text(&state.i18n.tr("login_service_unavailable"));
-      widgets.auth_entry.set_sensitive(true);
-      widgets.submit_button.set_sensitive(true);
-      state.waiting_for_prompt.set(false);
-      state.active_prompt.replace(None);
-    }
-    Event::SessionStarting => {
-      widgets
-        .status_label
-        .set_text(&state.i18n.tr("starting_session"));
-      widgets.auth_entry.set_sensitive(false);
-      widgets.submit_button.set_sensitive(false);
-    }
-    Event::SessionStarted => {
-      widgets
-        .status_label
-        .set_text(&state.i18n.tr("session_started"));
-      let window = widgets.window.clone();
-      if let Some(app) = window.application() {
-        app.quit();
-      } else {
-        window.close();
+      // Authentication messages are normalized at the UI boundary so backend
+      // wording does not leak into the rest of the state machine.
+      Event::Info(message) => {
+        self.status = Some((i18n::auth_message(&self.i18n, &message), StatusKind::Info))
+      }
+      Event::Error(message) => {
+        self.password.clear();
+        self.waiting_for_prompt = false;
+        self.set_status(i18n::auth_message(&self.i18n, &message), StatusKind::Error);
+      }
+      Event::AuthFailed(message) => {
+        self.password.clear();
+        self.waiting_for_prompt = false;
+        let text = if message.is_empty() {
+          self.i18n.tr("authentication_failed")
+        } else {
+          i18n::auth_message(&self.i18n, &message)
+        };
+        self.set_status(text, StatusKind::Error);
+      }
+      Event::AuthPromptUnavailable => {
+        self.waiting_for_prompt = false;
+        self.set_error("no_active_auth_prompt");
+      }
+      Event::GreeterUnavailable => {
+        self.waiting_for_prompt = false;
+        self.set_error("login_service_unavailable");
+      }
+      Event::SessionStarting => {
+        self.set_status(self.i18n.tr("starting_session"), StatusKind::Info);
+        self.waiting_for_prompt = false;
+      }
+      Event::SessionStarted => {
+        self.set_status(self.i18n.tr("session_started"), StatusKind::Success);
+        self.quit = true;
       }
     }
   }
+
+  /// Displays an initial state error when discovery found no usable choices.
+  fn set_empty_state(&mut self) {
+    if self.users.is_empty() {
+      self.set_error("no_local_login_users");
+    } else if self.sessions.is_empty() {
+      self.set_error("no_wayland_sessions");
+    }
+  }
+
+  /// Translates a catalog key into an error status.
+  fn set_error(&mut self, key: &str) {
+    self.set_status(self.i18n.tr(key), StatusKind::Error);
+  }
+
+  /// Stores a status message together with its semantic severity.
+  fn set_status(&mut self, text: String, kind: StatusKind) {
+    self.status = Some((text, kind));
+  }
 }
 
-fn selected_user<'a>(widgets: &Widgets, users: &'a [User]) -> Option<&'a User> {
-  users.get(widgets.user_dropdown.selected() as usize)
-}
-
-fn selected_session<'a>(widgets: &Widgets, sessions: &'a [Session]) -> Option<&'a Session> {
-  sessions.get(widgets.session_dropdown.selected() as usize)
-}
-
-fn update_selected_user(widgets: &Widgets, users: &[User]) {
-  let Some(user) = selected_user(widgets, users) else {
-    widgets.display_name.set_text("Argvus");
-    apply_avatar(widgets, None);
-    return;
-  };
-
-  widgets.display_name.set_text(&user.display_name);
-  apply_avatar(widgets, user.avatar.as_deref());
-}
-
-fn apply_avatar(widgets: &Widgets, path: Option<&Path>) {
-  let texture = path
-    .and_then(load_user_avatar)
-    .or_else(|| widgets.default_avatar.clone());
-
-  if let Some(texture) = texture {
-    widgets.avatar.remove_css_class("avatar-fallback");
-    widgets.avatar.set_paintable(Some(&texture));
+/// Moves an index by one step and wraps at either end of a non-empty list.
+fn move_index(index: usize, length: usize, delta: isize) -> usize {
+  // Empty lists are valid during discovery failures; returning zero avoids
+  // underflow and lets the UI show its empty-state message.
+  if length == 0 {
+    return 0;
+  }
+  if delta < 0 {
+    if index == 0 { length - 1 } else { index - 1 }
+  } else if index + 1 >= length {
+    0
   } else {
-    widgets.avatar.add_css_class("avatar-fallback");
-    widgets.avatar.set_paintable(None::<&gdk::Texture>);
+    index + 1
   }
 }
 
-// NOTE: avatar images are decoded straight to `AVATAR_IMAGE_SIZE_PX` (times
-// `AVATAR_SUPERSAMPLE`) instead of loading the file at full resolution and
-// relying on GtkPicture/CSS to shrink it. GtkPicture's `width-request` /
-// `height-request` (and the CSS `min-width` / `min-height` we set on
-// `.avatar-picture`) only raise the *minimum* size GTK will lay it out at —
-// they never cap the *natural* size, which GtkPicture derives from the
-// paintable's intrinsic pixel size. Since the login panel always has room to
-// spare, GTK grants the picture its natural size, so a full-resolution photo
-// (or the 256x256 default SVG) keeps rendering at its original size no
-// matter what the request/CSS says. Decoding at the target size fixes the
-// natural size at the source, so it actually shrinks.
-fn load_user_avatar(path: &Path) -> Option<gdk::Texture> {
-  let target = AVATAR_IMAGE_SIZE_PX * AVATAR_SUPERSAMPLE;
-  // preserve_aspect_ratio=true: avoids squashing non-square photos. The
-  // `.avatar-picture`'s ContentFit::Cover still crops the result to a
-  // square, it just no longer has to downscale a full-resolution source.
-  match Pixbuf::from_file_at_scale(path, target, target, true) {
-    Ok(pixbuf) => Some(gdk::Texture::for_pixbuf(&pixbuf)),
-    Err(error) => {
-      tracing::warn!(%error, path = %path.display(), "user avatar could not be loaded");
-      None
-    }
-  }
-}
+#[cfg(test)]
+mod tests {
+  //! Focus/index tests cover the pure navigation invariants without requiring
+  //! a terminal, greetd socket, or graphical session.
+  use super::*;
 
-fn load_default_avatar() -> Option<gdk::Texture> {
-  let target = AVATAR_IMAGE_SIZE_PX * AVATAR_SUPERSAMPLE;
-  let stream = gio::MemoryInputStream::from_bytes(&glib::Bytes::from_static(DEFAULT_AVATAR));
-  match Pixbuf::from_stream_at_scale(&stream, target, target, true, gio::Cancellable::NONE) {
-    Ok(pixbuf) => Some(gdk::Texture::for_pixbuf(&pixbuf)),
-    Err(error) => {
-      tracing::warn!(%error, "default avatar asset could not be decoded");
-      None
-    }
-  }
-}
-
-fn update_empty_state(widgets: &Widgets, users: &[User], sessions: &[Session]) {
-  if users.is_empty() || sessions.is_empty() {
-    widgets.auth_entry.set_sensitive(false);
-    widgets.submit_button.set_sensitive(false);
-    let message = if users.is_empty() {
-      widgets.i18n.tr("no_local_login_users")
-    } else {
-      widgets.i18n.tr("no_wayland_sessions")
-    };
-    widgets.status_label.set_text(&message);
-  }
-}
-
-fn power_menu(i18n: &I18n) -> gtk::MenuButton {
-  let power_label = i18n.tr("power");
-  let menu = gtk::MenuButton::builder()
-    .icon_name("system-shutdown-symbolic")
-    .tooltip_text(&power_label)
-    .build();
-  menu.add_css_class("power-button");
-
-  let popover = gtk::Popover::new();
-  let box_ = gtk::Box::new(gtk::Orientation::Vertical, 4);
-  box_.set_margin_top(8);
-  box_.set_margin_bottom(8);
-  box_.set_margin_start(8);
-  box_.set_margin_end(8);
-
-  for action in [
-    PowerAction::Shutdown,
-    PowerAction::Restart,
-    PowerAction::Suspend,
-  ] {
-    let button = gtk::Button::with_label(&action.label(i18n));
-    button.set_halign(gtk::Align::Fill);
-    button.connect_clicked(move |_| {
-      if let Err(error) = power::request(action) {
-        tracing::warn!(%error, "power action failed");
-      }
-    });
-    box_.append(&button);
+  #[test]
+  /// Selection wraps in both directions and remains stable for empty lists.
+  fn index_wraps_in_both_directions() {
+    assert_eq!(move_index(0, 3, -1), 2);
+    assert_eq!(move_index(2, 3, 1), 0);
+    assert_eq!(move_index(1, 0, 1), 0);
   }
 
-  popover.set_child(Some(&box_));
-  menu.set_popover(Some(&popover));
-  menu
+  #[test]
+  /// Tab order includes the first and last controls as a closed cycle.
+  fn focus_cycles_with_tab() {
+    assert_eq!(Focus::User.next(), Focus::Password);
+    assert_eq!(Focus::User.previous(), Focus::Power);
+  }
 }

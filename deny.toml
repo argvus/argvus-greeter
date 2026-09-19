@@ -1,3 +1,5 @@
+# cargo-deny is intentionally strict about dependency provenance because the
+# greeter runs before login and should have a small, auditable supply chain.
 # cargo-deny policy for dependencies added to the workspace.
 
 [advisories]

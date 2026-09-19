@@ -3,9 +3,11 @@
 #   git config core.hooksPath hooks
 
 MSG_FILE="$1"
+# Validate only the first line because Conventional Commit tooling treats the
+# remaining lines as the optional body and footer.
 MSG=$(head -n 1 "$MSG_FILE")
 
-# ----- Allowed types -----
+# ----- Allowed types: keep these synchronized with the project's release flow. -----
 TYPES="feat|fix|docs|style|refactor|test|chore|perf|build|ci"
 
 PATTERN="^($TYPES)(\([a-zA-Z0-9_-]+\))?: .+"

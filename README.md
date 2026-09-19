@@ -1,11 +1,17 @@
 # Argvus Greeter
 
-Argvus Greeter is a lightweight GTK4 graphical frontend for
+Argvus Greeter is a keyboard-first Ratatui terminal frontend for
 [greetd](https://git.sr.ht/~kennylevinsen/greetd) built for the Argvus Desktop
 Environment.
 
 It is designed for Wayland and for Argvus' Hyprland-based desktop, while still
 discovering installed Wayland sessions instead of hardcoding a single session.
+The packaged launcher opens it through `argvus-tui-terminal` using Kitty's
+graphics protocol, preserving avatars while remaining navigable with arrows,
+Enter and Tab. Its colors and semantic controls follow the active ARGVUS theme
+from `~/.config/argvus/.active-theme`; the greeter does not render a wallpaper.
+The launcher also requests a Greeter-only Kitty profile, which keeps the
+normal Kitty tab configuration unchanged while disabling tabs during login.
 
 ## Screenshot
 
@@ -17,6 +23,7 @@ Screenshot placeholder.
 systemd
    -> greetd
    -> minimal Wayland compositor session
+   -> argvus-tui-terminal
    -> argvus-greeter
    -> selected Wayland desktop session
 ```
@@ -27,10 +34,10 @@ from `GREETD_SOCK`; greetd then delegates authentication to PAM.
 ## Requirements
 
 - Rust 1.95 or newer
-- GTK 4
+- `argvus-tui-terminal` and Kitty graphics support
 - greetd
 - A Wayland compositor suitable for running the greeter, such as Hyprland
-- `argvus-appearance` for the default wallpaper path
+- `argvus-appearance` for the official ARGVUS TUI themes
 - systemd/logind for the power menu
 
 ## Building
@@ -98,7 +105,6 @@ System configuration is read from `/etc/argvus/greeter.toml`.
 
 ```toml
 [appearance]
-wallpaper = "/usr/share/backgrounds/argvus/default.png"
 show_clock = true
 show_date = true
 

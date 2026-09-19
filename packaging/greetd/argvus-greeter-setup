@@ -2,6 +2,8 @@
 
 set -eu
 
+# These paths are package-owned defaults; the backup step below protects an
+# administrator's existing greetd configuration before replacement.
 SOURCE_CONFIG="/usr/share/doc/argvus-greeter/greetd-config.toml"
 TARGET_CONFIG="/etc/greetd/config.toml"
 BACKUP_SUFFIX="$(date +%Y%m%d%H%M%S)"
@@ -31,6 +33,8 @@ need_root() {
 }
 
 while [ "$#" -gt 0 ]; do
+  # Parse options explicitly so an unknown operation cannot silently change the
+  # active display manager configuration.
   case "$1" in
     --enable)
       ENABLE=true
@@ -55,6 +59,8 @@ need_root
 [ -f "$SOURCE_CONFIG" ] || die "missing packaged config: $SOURCE_CONFIG"
 
 if [ -f "$TARGET_CONFIG" ] && ! cmp -s "$SOURCE_CONFIG" "$TARGET_CONFIG"; then
+  # Timestamped backups make the operation reversible without requiring Git or
+  # a package manager database.
   backup="${TARGET_CONFIG}.bak-${BACKUP_SUFFIX}"
   cp "$TARGET_CONFIG" "$backup"
   printf 'Backed up existing greetd config: %s\n' "$backup"

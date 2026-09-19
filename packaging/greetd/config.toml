@@ -1,6 +1,12 @@
+# greetd starts a dedicated compositor session rather than launching the TUI
+# directly on the virtual terminal. This keeps Wayland/Kitty initialization
+# isolated from the user's authenticated desktop.
 [terminal]
+# VT1 is the conventional boot/login VT; installations can override this file
+# before enabling greetd when another VT is required.
 vt = 1
 
 [default_session]
+# The unprivileged greeter account limits the pre-authentication process.
 command = "argvus-greeter-session"
 user = "greeter"

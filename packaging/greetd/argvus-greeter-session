@@ -3,11 +3,28 @@
 
 set -eu
 
+# Allow package upgrades to replace only the exact known legacy configuration;
+# administrator-owned custom paths must remain untouched.
 CONFIG="${ARGVUS_GREETER_HYPRLAND_CONFIG:-/etc/argvus/hyprland-argvus-greeter.lua}"
+
+# Pacman preserves modified backup files and writes the new package version to
+# a .pacnew file. The old configuration launched the TUI directly on the VT,
+# while the current one must launch it through argvus-tui-terminal. Use the
+# package-provided migration automatically when that exact legacy transition
+# is present; custom configurations and explicit overrides remain untouched.
+PACNEW="${CONFIG}.pacnew"
+if [ "$CONFIG" = "/etc/argvus/hyprland-argvus-greeter.lua" ] \
+  && [ -f "$PACNEW" ] \
+  && grep -Fq 'hl.exec_cmd("/usr/bin/argvus-greeter-tui")' "$PACNEW" \
+  && grep -Fq "hl.exec_cmd(\"sh -lc '/usr/bin/argvus-greeter; hyprctl dispatch exit'\")" "$CONFIG"; then
+  CONFIG="$PACNEW"
+fi
 
 # greetd may provide "/" as HOME for the greeter user.
 # GTK/GSettings and other desktop components require a writable HOME.
 if [ "${HOME:-}" = "/" ] || [ -z "${HOME:-}" ]; then
+  # greetd may deliberately provide an unusable HOME; use runtime storage so
+  # Kitty, Hyprland, and the ARGVUS bootstrap can still write private state.
   if [ -n "${XDG_RUNTIME_DIR:-}" ]; then
     HOME="${XDG_RUNTIME_DIR}/argvus-greeter/home"
   else
@@ -40,6 +57,8 @@ export GDK_BACKEND="${GDK_BACKEND:-wayland}"
 
 # Keep greeter state/logs in the runtime directory.
 if [ -n "${XDG_RUNTIME_DIR:-}" ]; then
+  # Runtime state disappears with the session and cannot pollute the user's
+  # persistent configuration before authentication.
   STATE_DIR="${XDG_RUNTIME_DIR}/argvus-greeter"
 else
   STATE_DIR="${XDG_STATE_HOME}/argvus-greeter"
@@ -63,6 +82,8 @@ fi
 # Containers are intentionally excluded: systemd-detect-virt also detects
 # containers, but they are not the target of this workaround.
 is_virtual_machine() {
+  # Restrict the workaround to actual VMs; container detection is intentionally
+  # excluded because it does not imply unreliable accelerated rendering.
   command -v systemd-detect-virt >/dev/null 2>&1 || return 1
 
   case "$(systemd-detect-virt 2>/dev/null || true)" in
@@ -85,7 +106,8 @@ if is_virtual_machine; then
     >> "$LOG"
 fi
 
-# Start the minimal Hyprland compositor.
+# Start the minimal Hyprland compositor. The command variants cover Arch's
+# executable naming and the development launcher without changing policy.
 if command -v start-hyprland >/dev/null 2>&1; then
   exec start-hyprland -- --config "$CONFIG" >> "$LOG" 2>&1
 fi

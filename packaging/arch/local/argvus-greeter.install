@@ -1,3 +1,6 @@
+#!/usr/bin/env bash
+# Pacman lifecycle messages provide the administrator with the explicit action
+# required to activate greetd after installing the package.
 post_install() {
   cat <<'EOF'
 ==> To use Argvus Greeter with greetd, run:

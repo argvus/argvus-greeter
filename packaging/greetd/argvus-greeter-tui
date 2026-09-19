@@ -1,0 +1,25 @@
+#!/usr/bin/env sh
+
+set -eu
+
+# The terminal wrapper owns emulator policy (including the Greeter-only Kitty
+# profile); the Rust binary remains responsible only for TUI behavior.
+# Disable Kitty tabs only for this login surface while preserving the user's
+# normal Kitty configuration and active ARGVUS theme.
+command -v argvus-tui-terminal >/dev/null 2>&1 || {
+  printf '%s\n' 'argvus-greeter-tui: argvus-tui-terminal is required' >&2
+  exit 127
+}
+
+argvus-tui-terminal \
+  --class argvus-greeter \
+  --term kitty \
+  --profile greeter \
+  -- /usr/bin/argvus-greeter
+status=$?
+
+if command -v hyprctl >/dev/null 2>&1; then
+  hyprctl dispatch exit >/dev/null 2>&1 || true
+fi
+
+exit "$status"
