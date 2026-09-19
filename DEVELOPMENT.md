@@ -100,7 +100,12 @@ The Arch package installs:
 /etc/argvus/hyprland-argvus-greeter.lua
 /usr/share/doc/argvus-greeter/greetd-config.toml
 /usr/share/doc/argvus-greeter/README.md
+/var/lib/argvus/greeter/themes/<uid>
 ```
+
+The per-UID files contain only validated official theme identifiers. They are
+updated by `argvus-appearance` after a successful theme switch and initialized
+for existing users by `argvus-greeter-setup --sync-themes`.
 
 The package declares `argvus-appearance` and `argvus-session` as runtime
 dependencies because the official TUI themes and session handoff rely on those

@@ -190,9 +190,17 @@ fn handle_response(
             description,
           } => {
             error!(session = %session.id, "session start failed");
+            // A failed StartSession still owns greetd's configuring slot on
+            // some PAM/session-manager paths. Explicitly cancel it before
+            // notifying the UI so the next login can create a fresh session.
+            cancel_session(stream);
             let _ = events.send(Event::Error(description));
           }
           Response::AuthMessage { .. } => {
+            // Authentication after StartSession is a protocol violation. The
+            // best-effort cancellation keeps a malformed backend response
+            // from poisoning the next login attempt.
+            cancel_session(stream);
             let _ = events.send(Event::Error(
               "greetd requested authentication after StartSession.".into(),
             ));
@@ -204,6 +212,11 @@ fn handle_response(
         error_type,
         description,
       } => {
+        // greetd documents automatic cleanup for errors, but an explicit
+        // CancelSession is required for reliable recovery across PAM stacks
+        // and daemon versions. Consume its response before exposing failure
+        // to the UI, preventing a rapid retry from racing cleanup.
+        cancel_session(stream);
         if matches!(error_type, ErrorType::AuthError) {
           info!("authentication failed");
           let _ = events.send(Event::AuthFailed(description));
@@ -250,5 +263,29 @@ fn handle_response(
         }
       },
     }
+  }
+}
+
+/// Releases the session currently owned by the greetd IPC connection.
+///
+/// Cancellation is deliberately best-effort: the original response may have
+/// already caused greetd to tear the session down, in which case the socket
+/// can legitimately reject this cleanup request. Any cleanup failure is
+/// logged without replacing the authentication error shown to the user.
+fn cancel_session(stream: &mut UnixStream) {
+  if let Err(error) = Request::CancelSession.write_to(stream) {
+    warn!(%error, "could not request greetd session cancellation");
+    return;
+  }
+
+  match Response::read_from(stream) {
+    Ok(Response::Success) => info!("greetd session cancelled"),
+    Ok(Response::Error { description, .. }) => {
+      warn!(%description, "greetd rejected session cancellation");
+    }
+    Ok(Response::AuthMessage { .. }) => {
+      warn!("greetd returned an authentication prompt while cancelling");
+    }
+    Err(error) => warn!(%error, "could not read greetd cancellation response"),
   }
 }

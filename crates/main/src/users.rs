@@ -23,6 +23,8 @@ const FACE_FILENAME: &str = ".face";
 pub struct User {
   /// Login name passed to greetd/PAM.
   pub username: String,
+  /// Numeric account identifier used to read the public pre-login theme state.
+  pub uid: u32,
   /// GECOS-derived display name shown in the TUI.
   pub display_name: String,
   /// First readable avatar source, if one can be safely resolved.
@@ -39,6 +41,7 @@ pub fn discover_users() -> anyhow::Result<Vec<User>> {
     .filter_map(parse_passwd_line)
     .filter(is_login_user)
     .map(|entry| User {
+      uid: entry.uid,
       display_name: display_name(&entry),
       avatar: avatar_for(&entry),
       username: entry.username,

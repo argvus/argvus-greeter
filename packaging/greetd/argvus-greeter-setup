@@ -6,19 +6,22 @@ set -eu
 # administrator's existing greetd configuration before replacement.
 SOURCE_CONFIG="/usr/share/doc/argvus-greeter/greetd-config.toml"
 TARGET_CONFIG="/etc/greetd/config.toml"
+THEME_STATE_DIR="${ARGVUS_GREETER_THEME_STATE_DIR:-/var/lib/argvus/greeter/themes}"
 BACKUP_SUFFIX="$(date +%Y%m%d%H%M%S)"
 ENABLE=false
 START=false
+SYNC_THEMES=false
 
 usage() {
   cat <<'EOF'
-Usage: argvus-greeter-setup [--enable] [--now] [--help]
+Usage: argvus-greeter-setup [--enable] [--now] [--sync-themes] [--help]
 
 Installs the Argvus greetd configuration at /etc/greetd/config.toml.
 
 Options:
   --enable  enable greetd.service after writing the config
   --now     enable and start greetd.service after writing the config
+  --sync-themes  publish existing user themes for the pre-login greeter
   --help    show this help
 EOF
 }
@@ -45,6 +48,10 @@ while [ "$#" -gt 0 ]; do
       START=true
       shift
     ;;
+    --sync-themes)
+      SYNC_THEMES=true
+      shift
+    ;;
     -h|--help)
       usage
       exit 0
@@ -56,6 +63,63 @@ while [ "$#" -gt 0 ]; do
 done
 
 need_root
+
+is_supported_theme() {
+  case "$1" in
+    argvus-dark-aether|argvus-dark-aether-float|argvus-dark-silver|argvus-dark-silver-float|\
+    argvus-dark-slate|argvus-dark-slate-float|argvus-dark-universe|argvus-dark-universe-float|\
+    argvus-light-veil|argvus-light-veil-float)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+publish_theme_for_user() {
+  _uid="$1"
+  _gid="$2"
+  _theme="$3"
+  is_supported_theme "$_theme" || return 0
+
+  _target="$THEME_STATE_DIR/$_uid"
+  _tmp="${_target}.tmp.$$"
+  if ! printf '%s\n' "$_theme" > "$_tmp"; then
+    rm -f -- "$_tmp"
+    return 0
+  fi
+  chmod 0644 "$_tmp"
+  chown "$_uid:$_gid" "$_tmp"
+  mv -f -- "$_tmp" "$_target"
+}
+
+sync_themes() {
+  install -d -m 1777 "$THEME_STATE_DIR"
+
+  # Read only the passwd fields needed to locate each interactive user's
+  # private source file. Invalid or inaccessible accounts are skipped safely.
+  while IFS=: read -r _username _password _uid _gid _gecos _home _shell; do
+    [ "${_uid:-0}" -ge 1000 ] 2>/dev/null || continue
+    case "${_shell:-}" in
+      */false|*/nologin|'') continue ;;
+    esac
+    [ -n "${_home:-}" ] || continue
+    _active="$_home/.config/argvus/.active-theme"
+    [ -f "$_active" ] || continue
+    _theme="$(sed -n '1p' "$_active" 2>/dev/null || true)"
+    publish_theme_for_user "$_uid" "$_gid" "$_theme"
+  done < /etc/passwd
+}
+
+if [ "$SYNC_THEMES" = true ]; then
+  sync_themes
+fi
+
+if [ "$ENABLE" != true ]; then
+  [ "$SYNC_THEMES" = true ] && exit 0
+fi
+
 [ -f "$SOURCE_CONFIG" ] || die "missing packaged config: $SOURCE_CONFIG"
 
 if [ -f "$TARGET_CONFIG" ] && ! cmp -s "$SOURCE_CONFIG" "$TARGET_CONFIG"; then

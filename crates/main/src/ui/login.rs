@@ -26,6 +26,8 @@ use ratatui::{
   widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Widget, Wrap},
 };
 use std::{
+  fs,
+  os::unix::fs::MetadataExt,
   path::PathBuf,
   sync::{
     Arc,
@@ -37,6 +39,8 @@ use time::{OffsetDateTime, macros::format_description};
 // Compiled-in fallback keeps the login surface complete when no external
 // avatar source exists or the source cannot be decoded.
 const DEFAULT_AVATAR: &[u8] = include_bytes!("../../../../assets/avatar-default.svg");
+/// Public per-account theme projection maintained by argvus-appearance.
+const GREETER_THEME_STATE_DIR: &str = "/var/lib/argvus/greeter/themes";
 
 /// Interactive controls reachable through Tab and Shift-Tab.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -96,6 +100,8 @@ pub struct LoginApp {
   events: Receiver<Event>,
   /// Resolved ARGVUS semantic colors.
   theme: Theme,
+  /// UID whose public theme projection is currently loaded.
+  theme_user_uid: Option<u32>,
   /// Current decoded avatar or the built-in fallback.
   avatar: Option<ImageSurface>,
   /// Source path used to avoid decoding the same avatar on every frame.
@@ -177,6 +183,7 @@ impl LoginApp {
       events,
       // Theme::load is the shared ARGVUS source of semantic UI colors.
       theme: Theme::load(),
+      theme_user_uid: None,
       avatar: None,
       avatar_key: None,
       focus: Focus::User,
@@ -198,6 +205,7 @@ impl LoginApp {
     // The account area always renders an image, using the default asset when
     // the selected user has no usable external avatar.
     app.refresh_avatar();
+    app.refresh_theme();
     app.set_empty_state();
     app
   }
@@ -587,6 +595,29 @@ impl LoginApp {
       .or_else(|| ImageSurface::from_bytes(DEFAULT_AVATAR, true));
   }
 
+  /// Loads the selected account's pre-login theme projection.
+  ///
+  /// Only the UID-named projection is read here. The greeter intentionally
+  /// never traverses a user's private home because it runs before PAM has
+  /// authenticated that account.
+  fn refresh_theme(&mut self) {
+    let Some(user) = self.users.get(self.selected_user) else {
+      return;
+    };
+    if self.theme_user_uid == Some(user.uid) {
+      return;
+    }
+
+    let projection = PathBuf::from(GREETER_THEME_STATE_DIR).join(user.uid.to_string());
+    let active_name = fs::symlink_metadata(&projection)
+      .ok()
+      .filter(|metadata| metadata.is_file() && metadata.uid() == user.uid)
+      .and_then(|_| fs::read_to_string(projection).ok())
+      .unwrap_or_default();
+    self.theme = Theme::load_for_theme_name(&active_name);
+    self.theme_user_uid = Some(user.uid);
+  }
+
   /// Handles one terminal key event and updates only local UI state.
   ///
   /// Authentication and power actions are sent to their respective owners;
@@ -624,6 +655,7 @@ impl LoginApp {
     // Avatar refresh is cheap when the selected user is unchanged and ensures
     // selection changes become visible in the same event cycle.
     self.refresh_avatar();
+    self.refresh_theme();
   }
 
   /// Moves the active indexed control vertically, with wrap-around behavior.

@@ -9,7 +9,11 @@ discovering installed Wayland sessions instead of hardcoding a single session.
 The packaged launcher opens it through `argvus-tui-terminal` using Kitty's
 graphics protocol, preserving avatars while remaining navigable with arrows,
 Enter and Tab. Its colors and semantic controls follow the active ARGVUS theme
-from `~/.config/argvus/.active-theme`; the greeter does not render a wallpaper.
+for the currently selected account; the greeter does not render a wallpaper.
+Because the greeter runs before authentication as the isolated `greeter` user,
+`argvus-appearance` publishes only the validated theme name to
+`/var/lib/argvus/greeter/themes/<uid>`; private user configuration remains
+unreadable to the login process.
 The launcher also requests a Greeter-only Kitty profile, which keeps the
 normal Kitty tab configuration unchanged while disabling tabs during login.
 
@@ -100,6 +104,14 @@ If `/etc/greetd/config.toml` still points to `Hyprland --config ...conf`, run
 the helper again so greetd uses the packaged `argvus-greeter-session` + Lua
 configuration. Older direct commands can leave terminal output visible while
 the graphical greeter starts.
+
+The package synchronizes existing `.active-theme` files during installation.
+To refresh the public pre-login theme projections manually without changing
+greetd configuration, run:
+
+```sh
+sudo argvus-greeter-setup --sync-themes
+```
 
 ## Configuration
 
