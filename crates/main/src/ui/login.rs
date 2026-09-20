@@ -102,6 +102,8 @@ pub struct LoginApp {
   theme: Theme,
   /// UID whose public theme projection is currently loaded.
   theme_user_uid: Option<u32>,
+  /// Theme identifier passed to the post-login handoff splash.
+  theme_name: String,
   /// Current decoded avatar or the built-in fallback.
   avatar: Option<ImageSurface>,
   /// Source path used to avoid decoding the same avatar on every frame.
@@ -186,6 +188,7 @@ impl LoginApp {
       // Theme::load is the shared ARGVUS source of semantic UI colors.
       theme: Theme::load(),
       theme_user_uid: None,
+      theme_name: String::new(),
       avatar: None,
       avatar_key: None,
       focus: Focus::User,
@@ -616,8 +619,11 @@ impl LoginApp {
       .ok()
       .filter(|metadata| metadata.is_file() && metadata.uid() == user.uid)
       .and_then(|_| fs::read_to_string(projection).ok())
-      .unwrap_or_default();
+      .map(|name| name.trim().to_string())
+      .filter(|name| !name.is_empty())
+      .unwrap_or_else(|| "argvus-dark-aether".to_string());
     self.theme = Theme::load_for_theme_name(&active_name);
+    self.theme_name = active_name;
     self.theme_user_uid = Some(user.uid);
   }
 
@@ -779,6 +785,7 @@ impl LoginApp {
       .send(Command::Begin {
         username: user.username.clone(),
         session: session.clone(),
+        theme: self.theme_name.clone(),
       })
       .is_err()
     {

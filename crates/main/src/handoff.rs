@@ -25,7 +25,7 @@ pub struct WaylandSplash {
 
 impl WaylandSplash {
   /// Starts the session splash and waits for its first rendered frame.
-  pub fn start() -> anyhow::Result<Self> {
+  pub fn start(theme: &str) -> anyhow::Result<Self> {
     if !std::path::Path::new(SPLASH).is_file() {
       bail!("session splash is not installed at {SPLASH}");
     }
@@ -44,6 +44,8 @@ impl WaylandSplash {
       .args([
         "--session-handoff",
         "--spinner-only",
+        "--theme",
+        theme,
         "--ready-fd",
         &READY_FD.to_string(),
       ])

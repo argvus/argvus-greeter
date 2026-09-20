@@ -22,7 +22,11 @@ use tracing::{error, info, warn};
 /// Commands sent from the UI to the greetd worker.
 #[derive(Debug)]
 pub enum Command {
-  Begin { username: String, session: Session },
+  Begin {
+    username: String,
+    session: Session,
+    theme: String,
+  },
   AuthResponse(Option<String>),
 }
 
@@ -73,7 +77,11 @@ pub fn spawn_worker(commands: Receiver<Command>, events: Sender<Event>) {
 
     while let Ok(command) = commands.recv() {
       match command {
-        Command::Begin { username, session } => {
+        Command::Begin {
+          username,
+          session,
+          theme,
+        } => {
           // greetd allows only one CreateSession exchange per worker at a
           // time. Keep the existing socket when a repeated UI event arrives;
           // replacing it would abandon the in-flight authentication and make
@@ -84,7 +92,7 @@ pub fn spawn_worker(commands: Receiver<Command>, events: Sender<Event>) {
           }
           // A failed begin operation must not leave a partially initialized
           // socket available for a later password submission.
-          state = match begin_session(username, session, &events) {
+          state = match begin_session(username, session, theme, &events) {
             Ok(state) => state,
             Err(error) => {
               warn!(%error, "could not begin greetd session");
@@ -99,6 +107,7 @@ pub fn spawn_worker(commands: Receiver<Command>, events: Sender<Event>) {
           let WorkerState::Authenticating {
             mut stream,
             session,
+            theme,
           } = state
           else {
             let _ = events.send(Event::AuthPromptUnavailable);
@@ -106,7 +115,7 @@ pub fn spawn_worker(commands: Receiver<Command>, events: Sender<Event>) {
             continue;
           };
 
-          state = match send_auth_response(&mut stream, response, session, &events) {
+          state = match send_auth_response(&mut stream, response, session, theme, &events) {
             Ok(next) => next,
             Err(error) => {
               warn!(%error, "authentication exchange failed");
@@ -126,6 +135,7 @@ enum WorkerState {
   Authenticating {
     stream: UnixStream,
     session: Session,
+    theme: String,
   },
 }
 
@@ -133,6 +143,7 @@ enum WorkerState {
 fn begin_session(
   username: String,
   session: Session,
+  theme: String,
   events: &Sender<Event>,
 ) -> Result<WorkerState, GreeterError> {
   // greetd provides the socket path through the environment of the greeter
@@ -143,7 +154,7 @@ fn begin_session(
   info!(%username, "connected to greetd");
 
   Request::CreateSession { username }.write_to(&mut stream)?;
-  handle_response(&mut stream, session, events)
+  handle_response(&mut stream, session, theme, events)
 }
 
 /// Posts one authentication response and continues processing greetd output.
@@ -151,10 +162,11 @@ fn send_auth_response(
   stream: &mut UnixStream,
   response: Option<String>,
   session: Session,
+  theme: String,
   events: &Sender<Event>,
 ) -> Result<WorkerState, GreeterError> {
   Request::PostAuthMessageResponse { response }.write_to(stream)?;
-  handle_response(stream, session, events)
+  handle_response(stream, session, theme, events)
 }
 
 /// Consumes greetd responses until the protocol needs UI input or terminates.
@@ -165,6 +177,7 @@ fn send_auth_response(
 fn handle_response(
   stream: &mut UnixStream,
   session: Session,
+  theme: String,
   events: &Sender<Event>,
 ) -> Result<WorkerState, GreeterError> {
   loop {
@@ -176,7 +189,7 @@ fn handle_response(
         // The overlay must be mapped while Kitty and the greeter compositor
         // are still alive. A Wayland client cannot survive their later DRM
         // handover, but it eliminates the pre-handover empty screen.
-        let splash = match WaylandSplash::start() {
+        let splash = match WaylandSplash::start(&theme) {
           Ok(splash) => splash,
           Err(error) => {
             error!(%error, "could not start the greeter handoff splash");
@@ -257,6 +270,7 @@ fn handle_response(
           return Ok(WorkerState::Authenticating {
             stream: stream.try_clone().map_err(GreeterError::Connect)?,
             session,
+            theme,
           });
         }
         AuthMessageType::Visible => {
@@ -267,6 +281,7 @@ fn handle_response(
           return Ok(WorkerState::Authenticating {
             stream: stream.try_clone().map_err(GreeterError::Connect)?,
             session,
+            theme,
           });
         }
         AuthMessageType::Info => {
