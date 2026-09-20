@@ -8,6 +8,7 @@
 mod app;
 mod config;
 mod greetd;
+mod handoff;
 mod i18n;
 mod power;
 mod session;
@@ -21,6 +22,21 @@ use std::{
   path::PathBuf,
 };
 use tracing_subscriber::{EnvFilter, fmt};
+
+/// Returns a monotonic timestamp suitable for correlating login-transition events.
+pub(crate) fn monotonic_ns() -> u128 {
+  let mut value = libc::timespec {
+    tv_sec: 0,
+    tv_nsec: 0,
+  };
+  // CLOCK_MONOTONIC has no relation to wall-clock time and is therefore safe
+  // for measuring a transition even when NTP adjusts the system clock.
+  if unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut value) } == 0 {
+    value.tv_sec as u128 * 1_000_000_000 + value.tv_nsec as u128
+  } else {
+    0
+  }
+}
 
 fn main() -> anyhow::Result<()> {
   // Logging is initialized before any discovery work so configuration and

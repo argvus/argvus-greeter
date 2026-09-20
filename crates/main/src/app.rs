@@ -8,8 +8,30 @@ use crate::{config::Config, greetd, session::Session, ui, users::User};
 use argvus_tui::terminal::{TerminalGuard, install_panic_hook};
 use crossterm::event::{self, Event};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::time::Duration;
+
+static TERMINATION_REQUESTED: AtomicBool = AtomicBool::new(false);
+
+extern "C" fn request_termination(_: libc::c_int) {
+  TERMINATION_REQUESTED.store(true, Ordering::Relaxed);
+}
+
+fn install_handoff_signal_handler() -> std::io::Result<()> {
+  let action = libc::sigaction {
+    sa_sigaction: request_termination as *const () as usize,
+    sa_mask: unsafe { std::mem::zeroed() },
+    sa_flags: 0,
+    sa_restorer: None,
+  };
+  let result = unsafe { libc::sigaction(libc::SIGTERM, &action, std::ptr::null_mut()) };
+  if result == 0 {
+    Ok(())
+  } else {
+    Err(std::io::Error::last_os_error())
+  }
+}
 
 pub fn run(
   config: Config,
@@ -24,6 +46,7 @@ pub fn run(
   // The worker is started before the first frame so greetd errors can be
   // reported as soon as the login screen becomes interactive.
   greetd::spawn_worker(command_rx, event_tx);
+  install_handoff_signal_handler()?;
 
   // TerminalGuard restores the user's terminal even when rendering or event
   // handling returns an error. The panic hook provides the same guarantee for
@@ -32,6 +55,16 @@ pub fn run(
   let mut terminal = TerminalGuard::new()?;
   let mut app = ui::login::LoginApp::new(config, users, sessions, i18n, command_tx, event_rx);
   loop {
+    if TERMINATION_REQUESTED.load(Ordering::Relaxed) {
+      // Do not return from this branch: TerminalGuard would restore Kitty's
+      // alternate screen and reveal an empty compositor. `exit` intentionally
+      // bypasses destructors after recording the greetd-driven handoff.
+      tracing::info!(
+        monotonic_ns = crate::monotonic_ns(),
+        "greeter process exiting after handoff"
+      );
+      std::process::exit(0);
+    }
     // Drawing happens before input polling so every state transition is
     // visible without requiring a second key press.
     terminal.terminal_mut().draw(|frame| app.draw(frame))?;

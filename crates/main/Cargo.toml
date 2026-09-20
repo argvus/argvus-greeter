@@ -27,6 +27,7 @@ argvus-theme = { path = "../../../argvus-tui/crates/argvus-theme" }
 argvus-tui = { path = "../../../argvus-tui/crates/argvus-tui" }
 crossterm = "0.29"
 greetd_ipc = { version = "0.10.3", features = ["sync-codec"] }
+libc = "0.2"
 ratatui = "0.30.2"
 serde = { version = "1.0.228", features = ["derive"] }
 shlex = "1.3.0"

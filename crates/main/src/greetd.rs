@@ -5,7 +5,7 @@
 //! the UI should communicate through typed commands/events rather than owning
 //! a Unix socket directly.
 
-use crate::session::Session;
+use crate::{handoff::WaylandSplash, monotonic_ns, session::Session};
 use greetd_ipc::{
   AuthMessageType, ErrorType, Request, Response,
   codec::{Error as CodecError, SyncCodec},
@@ -172,7 +172,20 @@ fn handle_response(
       Response::Success => {
         // Authentication succeeded, so the selected session is handed to
         // greetd rather than launched by the greeter process itself.
-        info!(session = %session.id, "authentication succeeded");
+        info!(session = %session.id, monotonic_ns = monotonic_ns(), "authentication succeeded");
+        // The overlay must be mapped while Kitty and the greeter compositor
+        // are still alive. A Wayland client cannot survive their later DRM
+        // handover, but it eliminates the pre-handover empty screen.
+        let splash = match WaylandSplash::start() {
+          Ok(splash) => splash,
+          Err(error) => {
+            error!(%error, "could not start the greeter handoff splash");
+            let _ = events.send(Event::Error(
+              "Could not start the session transition.".into(),
+            ));
+            return Ok(WorkerState::Disconnected);
+          }
+        };
         let _ = events.send(Event::SessionStarting);
         Request::StartSession {
           cmd: session.command.clone(),
@@ -183,6 +196,10 @@ fn handle_response(
         match Response::read_from(stream)? {
           Response::Success => {
             info!(session = %session.id, "session started");
+            // greetd terminates the greeter session after accepting the user
+            // command. Keep the splash parented here until that SIGTERM, so
+            // terminal cleanup cannot uncover the compositor in between.
+            splash.detach();
             let _ = events.send(Event::SessionStarted);
           }
           Response::Error {

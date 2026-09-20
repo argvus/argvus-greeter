@@ -135,6 +135,8 @@ pub struct LoginApp {
   power_selected: usize,
   /// Signals the outer application loop to leave the terminal.
   pub quit: bool,
+  /// Prevents keyboard interaction once the session overlay owns the display.
+  handoff_active: bool,
 }
 
 /// Semantic class used to select status colors without embedding colors in
@@ -201,6 +203,7 @@ impl LoginApp {
       power_open: false,
       power_selected: 0,
       quit: false,
+      handoff_active: false,
     };
     // The account area always renders an image, using the default asset when
     // the selected user has no usable external avatar.
@@ -623,6 +626,9 @@ impl LoginApp {
   /// Authentication and power actions are sent to their respective owners;
   /// this method never performs blocking I/O directly on the TUI thread.
   pub fn handle_key(&mut self, key: KeyEvent) {
+    if self.handoff_active {
+      return;
+    }
     if key.kind != KeyEventKind::Press {
       return;
     }
@@ -849,7 +855,10 @@ impl LoginApp {
       Event::SessionStarted => {
         self.set_status(self.i18n.tr("session_started"), StatusKind::Success);
         self.authentication_in_progress = false;
-        self.quit = true;
+        // Keep Kitty and the greeter compositor alive under the mapped overlay
+        // until greetd sends SIGTERM. Returning here would restore the terminal
+        // and create the visible gap this handoff prevents.
+        self.handoff_active = true;
       }
     }
   }

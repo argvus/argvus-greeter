@@ -44,6 +44,9 @@ hl.config({
   misc = {
     disable_hyprland_logo = true,
     disable_splash_rendering = true,
+    -- Match the packaged splash fallback (#101218) while no client frame is
+    -- available. Theme-specific colors take over with the layer-shell frame.
+    background_color = "rgb(16, 18, 24)",
     force_default_wallpaper = 0,
   },
 })
