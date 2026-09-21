@@ -25,7 +25,7 @@ pub struct WaylandSplash {
 
 impl WaylandSplash {
   /// Starts the session splash and waits for its first rendered frame.
-  pub fn start(theme: &str) -> anyhow::Result<Self> {
+  pub fn start(theme: &str, accent: Option<&str>) -> anyhow::Result<Self> {
     if !std::path::Path::new(SPLASH).is_file() {
       bail!("session splash is not installed at {SPLASH}");
     }
@@ -40,15 +40,18 @@ impl WaylandSplash {
     let write_fd = pipe[1];
     tracing::info!("T1 splash-spawn");
     let mut command = Command::new(SPLASH);
+    command.args([
+      "--session-handoff",
+      "--spinner-only",
+      "--theme",
+      theme,
+      "--ready-fd",
+      &READY_FD.to_string(),
+    ]);
+    if let Some(accent) = accent {
+      command.args(["--accent", accent]);
+    }
     command
-      .args([
-        "--session-handoff",
-        "--spinner-only",
-        "--theme",
-        theme,
-        "--ready-fd",
-        &READY_FD.to_string(),
-      ])
       .stdin(Stdio::null())
       .stdout(Stdio::null())
       .stderr(Stdio::null());

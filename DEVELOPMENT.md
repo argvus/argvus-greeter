@@ -103,11 +103,14 @@ The Arch package installs:
 /usr/share/doc/argvus-greeter/greetd-config.toml
 /usr/share/doc/argvus-greeter/README.md
 /var/lib/argvus/greeter/themes/<uid>
+/var/lib/argvus/greeter/themes/<uid>.accent
 ```
 
-The per-UID files contain only validated official theme identifiers. They are
-updated by `argvus-appearance` after a successful theme switch and initialized
-for existing users by `argvus-greeter-setup --sync-themes`.
+The per-UID theme files contain only validated official theme identifiers. The
+matching `.accent` files contain only validated opaque `#RRGGBB` colors. Both
+are updated by `argvus-appearance` and initialized for existing users by
+`argvus-greeter-setup --sync-themes`. The greeter verifies file ownership
+against the selected account before reading either projection.
 
 The package declares `argvus-appearance` and `argvus-session` as runtime
 dependencies because the official TUI themes and session handoff rely on those

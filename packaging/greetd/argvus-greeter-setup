@@ -94,6 +94,45 @@ publish_theme_for_user() {
   mv -f -- "$_tmp" "$_target"
 }
 
+publish_accent_for_user() {
+  _uid="$1"
+  _gid="$2"
+  _home="$3"
+  _source="$_home/.config/argvus/.accent-color"
+  _target="$THEME_STATE_DIR/$_uid.accent"
+
+  if [ ! -f "$_source" ]; then
+    rm -f -- "$_target"
+    return 0
+  fi
+
+  _accent="$(sed -n '1{s/\r$//;s/^[[:space:]]*//;s/[[:space:]]*$//;p;}' "$_source" 2>/dev/null || true)"
+  case "$_accent" in
+    \#*) _accent="${_accent#\#}" ;;
+  esac
+  case "$_accent" in
+    ??????)
+      case "$_accent" in
+        *[!0-9A-Fa-f]*) rm -f -- "$_target"; return 0 ;;
+      esac
+      _accent="#$_accent"
+      ;;
+    *)
+      rm -f -- "$_target"
+      return 0
+      ;;
+  esac
+
+  _tmp="${_target}.tmp.$$"
+  if ! printf '%s\n' "$_accent" > "$_tmp"; then
+    rm -f -- "$_tmp"
+    return 0
+  fi
+  chmod 0644 "$_tmp"
+  chown "$_uid:$_gid" "$_tmp"
+  mv -f -- "$_tmp" "$_target"
+}
+
 sync_themes() {
   install -d -m 1777 "$THEME_STATE_DIR"
 
@@ -106,9 +145,13 @@ sync_themes() {
     esac
     [ -n "${_home:-}" ] || continue
     _active="$_home/.config/argvus/.active-theme"
-    [ -f "$_active" ] || continue
-    _theme="$(sed -n '1p' "$_active" 2>/dev/null || true)"
-    publish_theme_for_user "$_uid" "$_gid" "$_theme"
+    if [ -f "$_active" ]; then
+      _theme="$(sed -n '1p' "$_active" 2>/dev/null || true)"
+      publish_theme_for_user "$_uid" "$_gid" "$_theme"
+    else
+      rm -f -- "$THEME_STATE_DIR/$_uid" "$THEME_STATE_DIR/$_uid.tmp"
+    fi
+    publish_accent_for_user "$_uid" "$_gid" "$_home"
   done < /etc/passwd
 }
 

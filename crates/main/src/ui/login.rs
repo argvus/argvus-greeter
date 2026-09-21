@@ -42,6 +42,16 @@ const DEFAULT_AVATAR: &[u8] = include_bytes!("../../../../assets/avatar-default.
 /// Public per-account theme projection maintained by argvus-appearance.
 const GREETER_THEME_STATE_DIR: &str = "/var/lib/argvus/greeter/themes";
 
+fn valid_public_accent(value: &str) -> Option<String> {
+  let value = value.trim();
+  (value.len() == 7
+    && value.starts_with('#')
+    && value[1..]
+      .chars()
+      .all(|character| character.is_ascii_hexdigit()))
+  .then(|| value.to_owned())
+}
+
 /// Interactive controls reachable through Tab and Shift-Tab.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Focus {
@@ -104,6 +114,8 @@ pub struct LoginApp {
   theme_user_uid: Option<u32>,
   /// Theme identifier passed to the post-login handoff splash.
   theme_name: String,
+  /// Optional validated accent passed to the post-login handoff splash.
+  theme_accent: Option<String>,
   /// Current decoded avatar or the built-in fallback.
   avatar: Option<ImageSurface>,
   /// Source path used to avoid decoding the same avatar on every frame.
@@ -189,6 +201,7 @@ impl LoginApp {
       theme: Theme::load(),
       theme_user_uid: None,
       theme_name: String::new(),
+      theme_accent: None,
       avatar: None,
       avatar_key: None,
       focus: Focus::User,
@@ -618,12 +631,19 @@ impl LoginApp {
     let active_name = fs::symlink_metadata(&projection)
       .ok()
       .filter(|metadata| metadata.is_file() && metadata.uid() == user.uid)
-      .and_then(|_| fs::read_to_string(projection).ok())
+      .and_then(|_| fs::read_to_string(&projection).ok())
       .map(|name| name.trim().to_string())
       .filter(|name| !name.is_empty())
       .unwrap_or_else(|| "argvus-dark-aether".to_string());
-    self.theme = Theme::load_for_theme_name(&active_name);
+    let accent_projection = projection.with_extension("accent");
+    let active_accent = fs::symlink_metadata(&accent_projection)
+      .ok()
+      .filter(|metadata| metadata.is_file() && metadata.uid() == user.uid)
+      .and_then(|_| fs::read_to_string(accent_projection).ok())
+      .and_then(|accent| valid_public_accent(&accent));
+    self.theme = Theme::load_for_theme_name_and_accent(&active_name, active_accent.as_deref());
     self.theme_name = active_name;
+    self.theme_accent = active_accent;
     self.theme_user_uid = Some(user.uid);
   }
 
@@ -786,6 +806,7 @@ impl LoginApp {
         username: user.username.clone(),
         session: session.clone(),
         theme: self.theme_name.clone(),
+        accent: self.theme_accent.clone(),
       })
       .is_err()
     {

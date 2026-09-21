@@ -26,6 +26,7 @@ pub enum Command {
     username: String,
     session: Session,
     theme: String,
+    accent: Option<String>,
   },
   AuthResponse(Option<String>),
 }
@@ -81,6 +82,7 @@ pub fn spawn_worker(commands: Receiver<Command>, events: Sender<Event>) {
           username,
           session,
           theme,
+          accent,
         } => {
           // greetd allows only one CreateSession exchange per worker at a
           // time. Keep the existing socket when a repeated UI event arrives;
@@ -92,7 +94,7 @@ pub fn spawn_worker(commands: Receiver<Command>, events: Sender<Event>) {
           }
           // A failed begin operation must not leave a partially initialized
           // socket available for a later password submission.
-          state = match begin_session(username, session, theme, &events) {
+          state = match begin_session(username, session, theme, accent, &events) {
             Ok(state) => state,
             Err(error) => {
               warn!(%error, "could not begin greetd session");
@@ -108,6 +110,7 @@ pub fn spawn_worker(commands: Receiver<Command>, events: Sender<Event>) {
             mut stream,
             session,
             theme,
+            accent,
           } = state
           else {
             let _ = events.send(Event::AuthPromptUnavailable);
@@ -115,7 +118,7 @@ pub fn spawn_worker(commands: Receiver<Command>, events: Sender<Event>) {
             continue;
           };
 
-          state = match send_auth_response(&mut stream, response, session, theme, &events) {
+          state = match send_auth_response(&mut stream, response, session, theme, accent, &events) {
             Ok(next) => next,
             Err(error) => {
               warn!(%error, "authentication exchange failed");
@@ -136,6 +139,7 @@ enum WorkerState {
     stream: UnixStream,
     session: Session,
     theme: String,
+    accent: Option<String>,
   },
 }
 
@@ -144,6 +148,7 @@ fn begin_session(
   username: String,
   session: Session,
   theme: String,
+  accent: Option<String>,
   events: &Sender<Event>,
 ) -> Result<WorkerState, GreeterError> {
   // greetd provides the socket path through the environment of the greeter
@@ -154,7 +159,7 @@ fn begin_session(
   info!(%username, "connected to greetd");
 
   Request::CreateSession { username }.write_to(&mut stream)?;
-  handle_response(&mut stream, session, theme, events)
+  handle_response(&mut stream, session, theme, accent, events)
 }
 
 /// Posts one authentication response and continues processing greetd output.
@@ -163,10 +168,11 @@ fn send_auth_response(
   response: Option<String>,
   session: Session,
   theme: String,
+  accent: Option<String>,
   events: &Sender<Event>,
 ) -> Result<WorkerState, GreeterError> {
   Request::PostAuthMessageResponse { response }.write_to(stream)?;
-  handle_response(stream, session, theme, events)
+  handle_response(stream, session, theme, accent, events)
 }
 
 /// Consumes greetd responses until the protocol needs UI input or terminates.
@@ -178,6 +184,7 @@ fn handle_response(
   stream: &mut UnixStream,
   session: Session,
   theme: String,
+  accent: Option<String>,
   events: &Sender<Event>,
 ) -> Result<WorkerState, GreeterError> {
   loop {
@@ -189,7 +196,7 @@ fn handle_response(
         // The overlay must be mapped while Kitty and the greeter compositor
         // are still alive. A Wayland client cannot survive their later DRM
         // handover, but it eliminates the pre-handover empty screen.
-        let splash = match WaylandSplash::start(&theme) {
+        let splash = match WaylandSplash::start(&theme, accent.as_deref()) {
           Ok(splash) => splash,
           Err(error) => {
             error!(%error, "could not start the greeter handoff splash");
@@ -271,6 +278,7 @@ fn handle_response(
             stream: stream.try_clone().map_err(GreeterError::Connect)?,
             session,
             theme,
+            accent,
           });
         }
         AuthMessageType::Visible => {
@@ -282,6 +290,7 @@ fn handle_response(
             stream: stream.try_clone().map_err(GreeterError::Connect)?,
             session,
             theme,
+            accent,
           });
         }
         AuthMessageType::Info => {
