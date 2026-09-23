@@ -16,6 +16,7 @@ use crate::{
 };
 use argvus_i18n::I18n;
 use argvus_theme::Theme;
+use argvus_theme::loader::{DEFAULT_THEME, normalize_theme_name};
 use argvus_tui::image::ImageSurface;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::{
@@ -28,7 +29,7 @@ use ratatui::{
 use std::{
   fs,
   os::unix::fs::MetadataExt,
-  path::PathBuf,
+  path::{Path, PathBuf},
   sync::{
     Arc,
     mpsc::{Receiver, Sender},
@@ -50,6 +51,28 @@ fn valid_public_accent(value: &str) -> Option<String> {
       .chars()
       .all(|character| character.is_ascii_hexdigit()))
   .then(|| value.to_owned())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PublicThemeProjection {
+  name: String,
+  accent: Option<String>,
+}
+
+fn read_owned_regular_file(path: &Path, uid: u32) -> Option<String> {
+  let metadata = fs::symlink_metadata(path).ok()?;
+  (metadata.is_file() && metadata.uid() == uid).then(|| fs::read_to_string(path).ok())?
+}
+
+fn load_public_theme_projection(directory: &Path, uid: u32) -> PublicThemeProjection {
+  let projection = directory.join(uid.to_string());
+  let name = read_owned_regular_file(&projection, uid)
+    .map(|value| normalize_theme_name(value.trim()).to_owned())
+    .unwrap_or_else(|| DEFAULT_THEME.to_owned());
+  let accent = read_owned_regular_file(&projection.with_extension("accent"), uid)
+    .and_then(|value| valid_public_accent(&value));
+
+  PublicThemeProjection { name, accent }
 }
 
 /// Interactive controls reachable through Tab and Shift-Tab.
@@ -627,23 +650,11 @@ impl LoginApp {
       return;
     }
 
-    let projection = PathBuf::from(GREETER_THEME_STATE_DIR).join(user.uid.to_string());
-    let active_name = fs::symlink_metadata(&projection)
-      .ok()
-      .filter(|metadata| metadata.is_file() && metadata.uid() == user.uid)
-      .and_then(|_| fs::read_to_string(&projection).ok())
-      .map(|name| name.trim().to_string())
-      .filter(|name| !name.is_empty())
-      .unwrap_or_else(|| "argvus-dark-aether".to_string());
-    let accent_projection = projection.with_extension("accent");
-    let active_accent = fs::symlink_metadata(&accent_projection)
-      .ok()
-      .filter(|metadata| metadata.is_file() && metadata.uid() == user.uid)
-      .and_then(|_| fs::read_to_string(accent_projection).ok())
-      .and_then(|accent| valid_public_accent(&accent));
-    self.theme = Theme::load_for_theme_name_and_accent(&active_name, active_accent.as_deref());
-    self.theme_name = active_name;
-    self.theme_accent = active_accent;
+    let projection = load_public_theme_projection(Path::new(GREETER_THEME_STATE_DIR), user.uid);
+    self.theme =
+      Theme::load_for_theme_name_and_accent(&projection.name, projection.accent.as_deref());
+    self.theme_name = projection.name;
+    self.theme_accent = projection.accent;
     self.theme_user_uid = Some(user.uid);
   }
 
@@ -946,5 +957,70 @@ mod tests {
   fn focus_cycles_with_tab() {
     assert_eq!(Focus::User.next(), Focus::Password);
     assert_eq!(Focus::User.previous(), Focus::Power);
+  }
+
+  #[test]
+  fn public_projection_accepts_owned_official_theme_and_accent() {
+    let directory = temporary_projection_directory();
+    let uid = current_uid();
+    fs::write(directory.join(uid.to_string()), "argvus-light-veil\n").unwrap();
+    fs::write(directory.join(format!("{uid}.accent")), " #12aBcD \n").unwrap();
+
+    assert_eq!(
+      load_public_theme_projection(&directory, uid),
+      PublicThemeProjection {
+        name: "argvus-light-veil".to_owned(),
+        accent: Some("#12aBcD".to_owned()),
+      }
+    );
+    fs::remove_dir_all(directory).unwrap();
+  }
+
+  #[test]
+  fn public_projection_falls_back_for_missing_invalid_or_foreign_state() {
+    let directory = temporary_projection_directory();
+    let uid = current_uid();
+    fs::write(directory.join(uid.to_string()), "not-a-theme\n").unwrap();
+    fs::write(directory.join(format!("{uid}.accent")), "white\n").unwrap();
+
+    assert_eq!(
+      load_public_theme_projection(&directory, uid),
+      PublicThemeProjection {
+        name: DEFAULT_THEME.to_owned(),
+        accent: None,
+      }
+    );
+
+    let foreign_uid = uid.checked_add(1).unwrap_or(uid - 1);
+    fs::write(
+      directory.join(foreign_uid.to_string()),
+      "argvus-light-veil\n",
+    )
+    .unwrap();
+    assert_eq!(
+      load_public_theme_projection(&directory, foreign_uid),
+      PublicThemeProjection {
+        name: DEFAULT_THEME.to_owned(),
+        accent: None,
+      }
+    );
+    fs::remove_dir_all(directory).unwrap();
+  }
+
+  fn current_uid() -> u32 {
+    std::os::unix::fs::MetadataExt::uid(&fs::metadata(".").unwrap())
+  }
+
+  fn temporary_projection_directory() -> PathBuf {
+    let path = std::env::temp_dir().join(format!(
+      "argvus-greeter-theme-test-{}-{}",
+      std::process::id(),
+      std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos()
+    ));
+    fs::create_dir(&path).unwrap();
+    path
   }
 }
