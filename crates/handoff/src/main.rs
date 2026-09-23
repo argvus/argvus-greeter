@@ -49,10 +49,16 @@ impl Palette {
     let normalized = normalized.strip_suffix("-float").unwrap_or(normalized);
 
     let (background, accent) = match normalized {
+      "dracula" => (0x282a36, 0xbd93f9),
+      "onedark" => (0x282c34, 0x61afef),
       "dark-silver" => (0x595959, 0x333647),
       "dark-slate" => (0x3b4352, 0x7391a5),
       "dark-universe" => (0x000000, 0xffffff),
+      "gruvbox-dark-medium" => (0x282828, 0xD79921),
       "light-veil" => (0xffffff, 0x000000),
+      "rosepine" => (0xe0def4, 0xc4a7e7),
+      "tokyo-night" => (0x1a1b26, 0x7aa2f7),
+      "frost" => (0xf6f8fa, 0x0969da),
       _ => (0x191b27, 0x3590bd),
     };
 
@@ -492,6 +498,14 @@ mod tests {
     assert_eq!(
       Palette::from_theme("argvus-dark-universe-float").accent,
       0xffffff
+    );
+    assert_eq!(
+      Palette::from_theme("argvus-tokyo-night").background,
+      0x1a1b26
+    );
+    assert_eq!(
+      Palette::from_theme("argvus-tokyo-night").accent,
+      0x7aa2f7
     );
   }
 
