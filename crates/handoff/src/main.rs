@@ -63,6 +63,7 @@ impl Palette {
       "solitude" => (0x101315, 0x798186),
       "dark-sunset" => (0x0f0f0f, 0xe2be8a),
       "dark-hackerman" => (0x0b0c16, 0x82fb9c),
+      "dark-monokai" => (0x2d2a2e, 0x78dce8),
       _ => (0x191b27, 0x3590bd),
     };
 
@@ -517,6 +518,8 @@ mod tests {
     assert_eq!(Palette::from_theme("argvus-dark-sunset").accent, 0xe2be8a);
     assert_eq!(Palette::from_theme("argvus-dark-hackerman").background, 0x0b0c16);
     assert_eq!(Palette::from_theme("argvus-dark-hackerman").accent, 0x82fb9c);
+    assert_eq!(Palette::from_theme("argvus-dark-monokai").background, 0x2d2a2e);
+    assert_eq!(Palette::from_theme("argvus-dark-monokai").accent, 0x78dce8);
   }
 
   #[test]
