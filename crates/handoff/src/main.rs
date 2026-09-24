@@ -54,11 +54,13 @@ impl Palette {
       "dark-silver" => (0x595959, 0x333647),
       "dark-slate" => (0x3b4352, 0x7391a5),
       "dark-universe" => (0x000000, 0xffffff),
-      "gruvbox-dark-medium" => (0x282828, 0xD79921),
+      "dark-gruvbox-high" => (0x282828, 0xD79921),
+      "dark-gruvbox" => (0x282828, 0xD4BE98),
       "light-veil" => (0xffffff, 0x000000),
-      "rosepine" => (0xe0def4, 0xc4a7e7),
-      "tokyo-night" => (0x1a1b26, 0x7aa2f7),
-      "frost" => (0xf6f8fa, 0x0969da),
+      "dark-rosepine" => (0xe0def4, 0xc4a7e7),
+      "dark-tokio-night" => (0x1a1b26, 0x7aa2f7),
+      "light-frost" => (0xf6f8fa, 0x0969da),
+      "solitude" => (0x101315, 0x798186),
       _ => (0x191b27, 0x3590bd),
     };
 
@@ -500,13 +502,15 @@ mod tests {
       0xffffff
     );
     assert_eq!(
-      Palette::from_theme("argvus-tokyo-night").background,
+      Palette::from_theme("argvus-dark-tokio-night").background,
       0x1a1b26
     );
     assert_eq!(
-      Palette::from_theme("argvus-tokyo-night").accent,
+      Palette::from_theme("argvus-dark-tokio-night").accent,
       0x7aa2f7
     );
+    assert_eq!(Palette::from_theme("argvus-dark-solitude").background, 0x101315);
+    assert_eq!(Palette::from_theme("argvus-dark-solitude").accent, 0x798186);
   }
 
   #[test]
