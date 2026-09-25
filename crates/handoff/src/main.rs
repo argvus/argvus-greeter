@@ -62,6 +62,8 @@ impl Palette {
       "dark-tokio-night" | "dark-tokyo-night" | "tokyo-night" => (0x1a1b26, 0x7aa2f7),
       "light-frost" | "frost" => (0xf6f8fa, 0x0969da),
       "github-light" => (0xffffff, 0x0969da),
+      "one-light" => (0xfafafa, 0x4078f2),
+      "everforest-light" | "everforest-light-float" => (0xfdf6e3, 0x3a94c5),
       "solarized-light" | "light-solarized" => (0xfdf6e3, 0x268bd2),
       "catppuccin-latte" | "light-catppuccin-latte" | "dark-catppuccin-latte" => {
         (0xeff1f5, 0x1e66f5)
