@@ -19,7 +19,7 @@ use std::{
 use clap::Parser;
 
 const DEFAULT_SOCKET: &str = "/run/argvus-greeter/handoff.sock";
-const DEFAULT_THEME: &str = "argvus-dark-aether";
+const DEFAULT_THEME: &str = "argvus-dark";
 const FRAME_DELAY: Duration = Duration::from_millis(90);
 const DRM_IOCTL_MODE_CREATE_DUMB: libc::c_ulong = 0xc020_64b2;
 const DRM_IOCTL_MODE_MAP_DUMB: libc::c_ulong = 0xc010_64b3;
@@ -49,17 +49,24 @@ impl Palette {
     let normalized = normalized.strip_suffix("-float").unwrap_or(normalized);
 
     let (background, accent) = match normalized {
+      "dark" | "dark-aether" => (0x191b27, 0x3590bd),
+      "light" | "light-veil" => (0xffffff, 0x000000),
       "dracula" => (0x282a36, 0xbd93f9),
-      "onedark" => (0x282c34, 0x61afef),
-      "dark-silver" => (0x595959, 0x333647),
-      "dark-slate" => (0x3b4352, 0x7391a5),
-      "dark-universe" => (0x000000, 0xffffff),
-      "dark-gruvbox-high" => (0x282828, 0xD79921),
-      "dark-gruvbox" => (0x282828, 0xD4BE98),
-      "light-veil" => (0xffffff, 0x000000),
-      "dark-rosepine" => (0xe0def4, 0xc4a7e7),
-      "dark-tokio-night" => (0x1a1b26, 0x7aa2f7),
-      "light-frost" => (0xf6f8fa, 0x0969da),
+      "onedark" | "one-dark" => (0x282c34, 0x61afef),
+      "dark-silver" | "silver-dark" => (0x595959, 0x333647),
+      "dark-slate" | "slate-dark" => (0x3b4352, 0x7391a5),
+      "dark-universe" | "universe" => (0x000000, 0xffffff),
+      "dark-gruvbox-high" | "gruvbox-high-dark" => (0x282828, 0xD79921),
+      "dark-gruvbox" | "gruvbox-dark" => (0x282828, 0xD4BE98),
+      "dark-rose-pine" | "rose-pine" => (0x191724, 0xc4a7e7),
+      "dark-tokio-night" | "dark-tokyo-night" | "tokyo-night" => (0x1a1b26, 0x7aa2f7),
+      "light-frost" | "frost" => (0xf6f8fa, 0x0969da),
+      "github-light" => (0xffffff, 0x0969da),
+      "solarized-light" | "light-solarized" => (0xfdf6e3, 0x268bd2),
+      "catppuccin-latte" | "light-catppuccin-latte" | "dark-catppuccin-latte" => {
+        (0xeff1f5, 0x1e66f5)
+      }
+      "gruvbox-light" | "light-gruvbox" => (0xfbf1c7, 0x458588),
       "solitude" => (0x101315, 0x798186),
       "dark-sunset" => (0x0f0f0f, 0xe2be8a),
       "dark-hackerman" => (0x0b0c16, 0x82fb9c),
@@ -497,29 +504,29 @@ mod tests {
   #[test]
   fn supported_themes_map_to_expected_colors() {
     assert_eq!(
-      Palette::from_theme("ARGVUS Light Veil").background,
+      Palette::from_theme("ARGVUS Light").background,
       0xffffff
     );
     assert_eq!(
-      Palette::from_theme("argvus-dark-universe-float").accent,
+      Palette::from_theme("universe-float").accent,
       0xffffff
     );
     assert_eq!(
-      Palette::from_theme("argvus-dark-tokio-night").background,
+      Palette::from_theme("tokyo-night").background,
       0x1a1b26
     );
     assert_eq!(
-      Palette::from_theme("argvus-dark-tokio-night").accent,
+      Palette::from_theme("tokyo-night").accent,
       0x7aa2f7
     );
-    assert_eq!(Palette::from_theme("argvus-dark-solitude").background, 0x101315);
-    assert_eq!(Palette::from_theme("argvus-dark-solitude").accent, 0x798186);
-    assert_eq!(Palette::from_theme("argvus-dark-sunset").background, 0x0f0f0f);
-    assert_eq!(Palette::from_theme("argvus-dark-sunset").accent, 0xe2be8a);
-    assert_eq!(Palette::from_theme("argvus-dark-hackerman").background, 0x0b0c16);
-    assert_eq!(Palette::from_theme("argvus-dark-hackerman").accent, 0x82fb9c);
-    assert_eq!(Palette::from_theme("argvus-dark-monokai").background, 0x2d2a2e);
-    assert_eq!(Palette::from_theme("argvus-dark-monokai").accent, 0x78dce8);
+    assert_eq!(Palette::from_theme("solitude").background, 0x101315);
+    assert_eq!(Palette::from_theme("solitude").accent, 0x798186);
+    assert_eq!(Palette::from_theme("sunset").background, 0x0f0f0f);
+    assert_eq!(Palette::from_theme("sunset").accent, 0xe2be8a);
+    assert_eq!(Palette::from_theme("hackerman").background, 0x0b0c16);
+    assert_eq!(Palette::from_theme("hackerman").accent, 0x82fb9c);
+    assert_eq!(Palette::from_theme("monokai-dark").background, 0x2d2a2e);
+    assert_eq!(Palette::from_theme("monokai-dark").accent, 0x78dce8);
   }
 
   #[test]

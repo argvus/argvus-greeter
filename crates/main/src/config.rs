@@ -12,7 +12,7 @@ const CONFIG_PATH: &str = "/etc/argvus/greeter.toml";
 // Kept as a compatibility default for existing configuration files. The TUI
 // itself does not render a wallpaper, but deserializing this field preserves
 // the established configuration contract.
-const DEFAULT_WALLPAPER: &str = "/usr/share/backgrounds/argvus/default.png";
+const DEFAULT_WALLPAPER: &str = "/usr/share/backgrounds/argvus/argvus-dark.jxl";
 
 /// Top-level Greeter configuration parsed from TOML.
 #[derive(Debug, Clone, Default, Deserialize)]

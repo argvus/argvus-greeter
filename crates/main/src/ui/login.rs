@@ -963,13 +963,13 @@ mod tests {
   fn public_projection_accepts_owned_official_theme_and_accent() {
     let directory = temporary_projection_directory();
     let uid = current_uid();
-    fs::write(directory.join(uid.to_string()), "argvus-light-veil\n").unwrap();
+    fs::write(directory.join(uid.to_string()), "argvus-light\n").unwrap();
     fs::write(directory.join(format!("{uid}.accent")), " #12aBcD \n").unwrap();
 
     assert_eq!(
       load_public_theme_projection(&directory, uid),
       PublicThemeProjection {
-        name: "argvus-light-veil".to_owned(),
+        name: "argvus-light".to_owned(),
         accent: Some("#12aBcD".to_owned()),
       }
     );
@@ -992,11 +992,7 @@ mod tests {
     );
 
     let foreign_uid = uid.checked_add(1).unwrap_or(uid - 1);
-    fs::write(
-      directory.join(foreign_uid.to_string()),
-      "argvus-light-veil\n",
-    )
-    .unwrap();
+    fs::write(directory.join(foreign_uid.to_string()), "argvus-light\n").unwrap();
     assert_eq!(
       load_public_theme_projection(&directory, foreign_uid),
       PublicThemeProjection {
