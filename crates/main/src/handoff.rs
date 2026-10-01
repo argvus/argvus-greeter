@@ -15,7 +15,7 @@ use std::{
   time::Duration,
 };
 
-const SPLASH: &str = "/usr/lib/argvus/theme-splash/splash";
+const SPLASH: &str = "/usr/lib/argvus/loading-theme/splash";
 const READY_FD: RawFd = 3;
 const READY_TIMEOUT: Duration = Duration::from_secs(8);
 
