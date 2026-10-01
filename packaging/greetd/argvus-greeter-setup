@@ -125,10 +125,20 @@ publish_accent_for_user() {
   _uid="$1"
   _gid="$2"
   _home="$3"
-  _source="$_home/.config/argvus/.accent-color"
+  # The managed layout keeps the marker under `data/`. A profile that has not
+  # run the migration yet still has it at the root, so accept both.
+  _source=''
+  for _candidate in \
+    "$_home/.config/argvus/data/.accent-color" \
+    "$_home/.config/argvus/.accent-color"; do
+    if [ -f "$_candidate" ]; then
+      _source="$_candidate"
+      break
+    fi
+  done
   _target="$THEME_STATE_DIR/$_uid.accent"
 
-  if [ ! -f "$_source" ]; then
+  if [ -z "$_source" ]; then
     rm -f -- "$_target"
     return 0
   fi
@@ -171,8 +181,16 @@ sync_themes() {
       */false|*/nologin|'') continue ;;
     esac
     [ -n "${_home:-}" ] || continue
-    _active="$_home/.config/argvus/.active-theme"
-    if [ -f "$_active" ]; then
+    _active=''
+    for _candidate in \
+      "$_home/.config/argvus/data/.active-theme" \
+      "$_home/.config/argvus/.active-theme"; do
+      if [ -f "$_candidate" ]; then
+        _active="$_candidate"
+        break
+      fi
+    done
+    if [ -n "$_active" ]; then
       _theme="$(sed -n '1p' "$_active" 2>/dev/null || true)"
       publish_theme_for_user "$_uid" "$_gid" "$_theme"
     else
