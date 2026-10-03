@@ -40,4 +40,4 @@ normalized values to Kitty and the minimal Hyprland compositor. The user's
 `~/.config/argvus/config.json` is not read before authentication. Blur is only
 visually apparent when content exists behind the Kitty surface.
 
-Greeter, session-loading overlay and boot splash are separate components. See the developer [startup subsystem](../../developer-guide/subsystems/greeter-lock-and-splash/).
+Greeter, session-loading overlay and boot splash are separate components. See the developer [startup subsystem](/docs/developer-guide/subsystems/greeter-lock-and-splash/).
