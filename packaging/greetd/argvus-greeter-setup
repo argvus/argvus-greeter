@@ -72,6 +72,8 @@ is_supported_theme() {
       return 0
       ;;
     *)
+      # Drop-in themes are supported when their installed manifest exists.
+      [ -r "${ARGVUS_SYSTEM_CONFIG:-/usr/share/argvus}/appearance/themes.d/$1/theme.toml" ] && return 0
       return 1
       ;;
   esac
