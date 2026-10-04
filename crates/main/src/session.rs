@@ -11,14 +11,35 @@ use std::{
   path::{Path, PathBuf},
 };
 
-const WAYLAND_SESSION_DIRS: &[&str] = &[
+/// Session directories paired with the session type they provide. Wayland
+/// entries come first so a Wayland session wins over an X11 one with the same id.
+const SESSION_DIRS: &[(&str, SessionKind)] = &[
   // Prefer the standard system directory while retaining the conventional
   // local administrator directory for development/custom installations.
-  "/usr/share/wayland-sessions",
-  "/usr/local/share/wayland-sessions",
+  ("/usr/share/wayland-sessions", SessionKind::Wayland),
+  ("/usr/local/share/wayland-sessions", SessionKind::Wayland),
+  ("/usr/share/xsessions", SessionKind::X11),
+  ("/usr/local/share/xsessions", SessionKind::X11),
 ];
 
-/// A validated Wayland session available to greetd.
+/// Display server protocol a session expects, derived from its directory.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SessionKind {
+  Wayland,
+  X11,
+}
+
+impl SessionKind {
+  /// Value of `XDG_SESSION_TYPE` for this kind of session.
+  fn xdg_session_type(self) -> &'static str {
+    match self {
+      Self::Wayland => "wayland",
+      Self::X11 => "x11",
+    }
+  }
+}
+
+/// A validated graphical session available to greetd.
 #[derive(Debug, Clone)]
 pub struct Session {
   /// Stable desktop-file identifier used for selection and logging.
@@ -29,15 +50,42 @@ pub struct Session {
   pub command: Vec<String>,
   /// Whether this entry matches the configured default preference.
   pub is_default: bool,
+  /// Display server protocol, used to set `XDG_SESSION_TYPE`.
+  pub kind: SessionKind,
+  /// `DesktopNames` metadata from the desktop entry, in declaration order.
+  pub desktop_names: Vec<String>,
 }
 
-/// Discovers, deduplicates, validates, and sorts installed Wayland sessions.
+impl Session {
+  /// Environment passed to greetd so the session starts with the desktop
+  /// identity its own `.desktop` file declares. Desktops such as GNOME select
+  /// their mode from `XDG_CURRENT_DESKTOP`, so it must not be left unset.
+  pub fn launch_env(&self) -> Vec<String> {
+    let desktop = self
+      .desktop_names
+      .first()
+      .cloned()
+      .unwrap_or_else(|| self.id.clone());
+
+    let mut env = vec![
+      format!("XDG_SESSION_TYPE={}", self.kind.xdg_session_type()),
+      format!("XDG_CURRENT_DESKTOP={desktop}"),
+      format!("XDG_SESSION_DESKTOP={desktop}"),
+    ];
+    if !self.desktop_names.is_empty() {
+      env.push(format!("DESKTOP_NAMES={}", self.desktop_names.join(";")));
+    }
+    env
+  }
+}
+
+/// Discovers, deduplicates, validates, and sorts installed graphical sessions.
 pub fn discover_sessions(default_id: &str) -> anyhow::Result<Vec<Session>> {
   // BTreeMap provides deterministic ordering and lets the first valid entry
   // win when multiple search directories contain the same session id.
   let mut sessions = BTreeMap::new();
 
-  for dir in WAYLAND_SESSION_DIRS {
+  for (dir, kind) in SESSION_DIRS {
     let path = Path::new(dir);
     // Missing optional directories are normal on minimal systems; unreadable
     // directories are errors because discovery would otherwise be incomplete.
@@ -54,7 +102,7 @@ pub fn discover_sessions(default_id: &str) -> anyhow::Result<Vec<Session>> {
         continue;
       }
 
-      match parse_session_file(&path, default_id) {
+      match parse_session_file(&path, default_id, *kind) {
         Ok(session) => {
           sessions.entry(session.id.clone()).or_insert(session);
         }
@@ -74,7 +122,7 @@ pub fn discover_sessions(default_id: &str) -> anyhow::Result<Vec<Session>> {
 }
 
 /// Parses and validates one Wayland desktop entry.
-fn parse_session_file(path: &Path, default_id: &str) -> anyhow::Result<Session> {
+fn parse_session_file(path: &Path, default_id: &str, kind: SessionKind) -> anyhow::Result<Session> {
   let contents = fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
   // Desktop entry keys are kept as strings because only a small subset is
   // relevant to greetd and preserving unknown keys has no security benefit.
@@ -116,6 +164,8 @@ fn parse_session_file(path: &Path, default_id: &str) -> anyhow::Result<Session> 
     id,
     name,
     command,
+    kind,
+    desktop_names,
   })
 }
 
@@ -217,4 +267,42 @@ fn is_default_session(id: &str, name: &str, desktop_names: &[String], configured
         || desktop_names
           .iter()
           .any(|value| value.eq_ignore_ascii_case("hyprland"))))
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  fn session(kind: SessionKind, desktop_names: &[&str]) -> Session {
+    Session {
+      id: "gnome".into(),
+      name: "GNOME".into(),
+      command: vec!["/usr/bin/gnome-session".into()],
+      is_default: false,
+      kind,
+      desktop_names: desktop_names
+        .iter()
+        .map(|value| value.to_string())
+        .collect(),
+    }
+  }
+
+  #[test]
+  fn launch_env_uses_desktop_names_and_wayland_type() {
+    let env = session(SessionKind::Wayland, &["GNOME"]).launch_env();
+
+    assert!(env.contains(&"XDG_SESSION_TYPE=wayland".to_string()));
+    assert!(env.contains(&"XDG_CURRENT_DESKTOP=GNOME".to_string()));
+    assert!(env.contains(&"XDG_SESSION_DESKTOP=GNOME".to_string()));
+    assert!(env.contains(&"DESKTOP_NAMES=GNOME".to_string()));
+  }
+
+  #[test]
+  fn launch_env_marks_x11_sessions_and_falls_back_to_id() {
+    let env = session(SessionKind::X11, &[]).launch_env();
+
+    assert!(env.contains(&"XDG_SESSION_TYPE=x11".to_string()));
+    assert!(env.contains(&"XDG_CURRENT_DESKTOP=gnome".to_string()));
+    assert!(!env.iter().any(|value| value.starts_with("DESKTOP_NAMES=")));
+  }
 }

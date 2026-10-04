@@ -209,7 +209,7 @@ fn handle_response(
         let _ = events.send(Event::SessionStarting);
         Request::StartSession {
           cmd: session.command.clone(),
-          env: vec!["XDG_SESSION_TYPE=wayland".to_string()],
+          env: session.launch_env(),
         }
         .write_to(stream)?;
 

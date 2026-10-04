@@ -42,4 +42,26 @@ valores normalizados ao Kitty e ao Hyprland mínimo. O
 blur só é visualmente perceptível quando existe conteúdo atrás da superfície
 Kitty.
 
+## Descoberta e início de sessões
+
+O greeter lista cada entrada de desktop válida encontrada nestes diretórios, em ordem de prioridade:
+
+- `/usr/share/wayland-sessions` e `/usr/local/share/wayland-sessions`, iniciadas com `XDG_SESSION_TYPE=wayland`;
+- `/usr/share/xsessions` e `/usr/local/share/xsessions`, iniciadas com `XDG_SESSION_TYPE=x11`.
+
+Uma entrada é aceita quando tem `Name` e `Exec` não vazios no grupo `[Desktop Entry]`, e o executável resolve para um arquivo existente. Entradas que falham nessas verificações são registradas no log e ignoradas. Um arquivo com o mesmo nome em um diretório de maior prioridade substitui o de menor prioridade. `Hidden` e `NoDisplay` não são considerados, então toda entrada válida aparece.
+
+Antes do `StartSession`, o greeter define o ambiente que o desktop escolhido espera:
+
+- `XDG_CURRENT_DESKTOP` e `XDG_SESSION_DESKTOP` recebem o primeiro valor de `DesktopNames`, ou o nome do arquivo `.desktop` quando `DesktopNames` não existe;
+- `DESKTOP_NAMES` recebe a lista completa de `DesktopNames`, quando ela existe.
+
+A sessão padrão é definida por `[session] default` em `/etc/argvus/greeter.toml` e vem pré-selecionada. Use Tab para focar o campo de sessão e, depois, Esquerda e Direita para trocá-la.
+
+## Perfis de shell de login
+
+O greetd é configurado com `source_profile = false` em `/etc/greetd/config.toml`. Assim, a sessão escolhida inicia diretamente pelo seu arquivo `.desktop`: `~/.profile`, `~/.zprofile` e arquivos semelhantes não são lidos nas sessões do greeter. Um perfil que inicia uma sessão de TTY, como `exec argvus-tty` na VT1, não consegue substituir a sessão escolhida no greeter. Variáveis de ambiente definidas apenas nesses arquivos não ficam disponíveis nas sessões do greeter; para serviços de usuário do systemd, defina-as em `~/.config/environment.d/`, ou no próprio arquivo `.desktop` da sessão.
+
+`sudo argvus-greeter-setup` instala essa configuração. Pacotes gerados antes desta mudança mantêm a configuração anterior do greetd até que o helper de configuração seja executado novamente.
+
 Greeter, overlay de carregamento da sessão e splash de boot são componentes separados.
