@@ -3,6 +3,12 @@
 
 set -eu
 
+# Ensure PATH includes standard system directories for subprocess discovery.
+# The login manager (e.g., greetd with source_profile=false) may not export PATH
+# or may provide only a partial PATH, breaking utilities such as hyprland-dialog
+# that Hyprland requires at startup. Always set a complete standard PATH.
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/bin${PATH:+:$PATH}"
+
 # Allow package upgrades to replace only the exact known legacy configuration;
 # administrator-owned custom paths must remain untouched.
 CONFIG="${ARGVUS_GREETER_HYPRLAND_CONFIG:-/etc/argvus/hyprland-argvus-greeter.lua}"
