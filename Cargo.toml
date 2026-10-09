@@ -7,7 +7,7 @@ members = ["crates/main"]
 [workspace.package]
 # Workspace metadata is inherited by the binary crate and is also consumed by
 # the Arch packaging templates.
-version = "0.4.0"
+version = "0.1.0"
 edition = "2024"
 license = "GPL-3.0-only"
 rust-version = "1.95"

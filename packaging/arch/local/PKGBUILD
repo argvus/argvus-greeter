@@ -2,8 +2,8 @@
 # Local package recipe: the source archive is supplied by the repository's
 # development packaging helper, allowing sibling local crates to be included.
 pkgname=argvus-greeter
-pkgver=0.4.0
-pkgrel=2
+pkgver=0.1.0
+pkgrel=1
 pkgdesc="Keyboard-first TUI greetd greeter for the Argvus Desktop Environment"
 arch=('x86_64')
 url="https://github.com/argvus/argvus-greeter"
