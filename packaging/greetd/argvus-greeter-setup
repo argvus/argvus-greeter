@@ -68,7 +68,7 @@ is_supported_theme() {
   case "$1" in
     one-dark|one-dark-float|dracula|dracula-float|argvus-dark|argvus-dark-float|silver-dark|silver-dark-float|\
     slate-dark|slate-dark-float|universe|universe-float|\
-    argvus-light|argvus-light-float|github-light|github-light-float|solarized-light|solarized-light-float|one-light|one-light-float|everforest-light|everforest-light-float|frost|frost-float|catppuccin-latte|catppuccin-latte-float|gruvbox-light|gruvbox-light-float|rose-pine|rose-pine-float|tokyo-night|tokyo-night-float|solitude|solitude-float|sunset|sunset-float|hackerman|hackerman-float|monokai-dark|monokai-dark-float)
+    argvus-light|argvus-light-float|github-light|github-light-float|solarized-light|solarized-light-float|one-light|one-light-float|everforest-light|everforest-light-float|frost|frost-float|catppuccin-latte|catppuccin-latte-float|gruvbox-light|gruvbox-light-float|rose-pine|rose-pine-float|tokyo-night|tokyo-night-float|solitude|solitude-float|sunset|sunset-float|matrix|matrix-float|monokai-dark|monokai-dark-float)
       return 0
       ;;
     *)
@@ -98,7 +98,7 @@ canonical_theme_id() {
     argvus-dark-tokio-night) printf '%s\n' "tokyo-night" ;; argvus-dark-tokio-night-float) printf '%s\n' "tokyo-night-float" ;;
     argvus-dark-solitude) printf '%s\n' "solitude" ;; argvus-dark-solitude-float) printf '%s\n' "solitude-float" ;;
     argvus-dark-sunset) printf '%s\n' "sunset" ;; argvus-dark-sunset-float) printf '%s\n' "sunset-float" ;;
-    argvus-dark-hackerman) printf '%s\n' "hackerman" ;; argvus-dark-hackerman-float) printf '%s\n' "hackerman-float" ;;
+    argvus-dark-matrix) printf '%s\n' "matrix" ;; argvus-dark-matrix-float) printf '%s\n' "matrix-float" ;;
     argvus-dark-monokai) printf '%s\n' "monokai-dark" ;; argvus-dark-monokai-float) printf '%s\n' "monokai-dark-float" ;;
     argvus-catppuccin-latte|argvus-light-catppuccin-latte) printf '%s\n' "catppuccin-latte" ;;
     argvus-catppuccin-latte-float|argvus-light-catppuccin-latte-float) printf '%s\n' "catppuccin-latte-float" ;;

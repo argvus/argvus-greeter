@@ -71,7 +71,7 @@ impl Palette {
       "gruvbox-light" | "light-gruvbox" => (0xfbf1c7, 0x458588),
       "solitude" => (0x101315, 0x798186),
       "dark-sunset" => (0x0f0f0f, 0xe2be8a),
-      "dark-hackerman" => (0x0b0c16, 0x82fb9c),
+      "dark-matrix" => (0x0b0c16, 0x82fb9c),
       "dark-monokai" => (0x2d2a2e, 0x78dce8),
       _ => (0x191b27, 0x3590bd),
     };
@@ -525,8 +525,8 @@ mod tests {
     assert_eq!(Palette::from_theme("solitude").accent, 0x798186);
     assert_eq!(Palette::from_theme("sunset").background, 0x0f0f0f);
     assert_eq!(Palette::from_theme("sunset").accent, 0xe2be8a);
-    assert_eq!(Palette::from_theme("hackerman").background, 0x0b0c16);
-    assert_eq!(Palette::from_theme("hackerman").accent, 0x82fb9c);
+    assert_eq!(Palette::from_theme("matrix").background, 0x0b0c16);
+    assert_eq!(Palette::from_theme("matrix").accent, 0x82fb9c);
     assert_eq!(Palette::from_theme("monokai-dark").background, 0x2d2a2e);
     assert_eq!(Palette::from_theme("monokai-dark").accent, 0x78dce8);
   }
