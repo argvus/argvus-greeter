@@ -61,7 +61,7 @@ Expected package locations:
 
 - `/usr/lib/argvus/commands/argvus-greeter`
 - `/etc/argvus/greeter.toml`
-- `/usr/share/argvus-greeter/`
+- `/usr/share/doc/argvus-greeter/`
 - `/usr/share/backgrounds/argvus/`
 - `/usr/share/wayland-sessions/argvus.desktop`
 

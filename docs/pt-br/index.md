@@ -12,7 +12,7 @@ O helper de configuração é `argvus-greeter-setup`. Em um sistema instalado, u
 sudo argvus greeter-setup --enable
 ```
 
-Use `sudo argvus-greeter-setup --now` quando o greetd deve ser reiniciado imediatamente. O helper preserva um backup de `/etc/greetd/config.toml` antes de instalar a configuração do greetd do ARGVUS. Use `argvus-greeter-setup --help` para consultar as opções instaladas.
+Use `sudo argvus greeter-setup --now` quando o greetd deve ser reiniciado imediatamente. O helper preserva um backup de `/etc/greetd/config.toml` antes de instalar a configuração do greetd do ARGVUS. Use `argvus greeter-setup --help` para consultar as opções instaladas.
 
 O greeter lê dados locais de `argvus-accounts`, autentica pelo greetd e entrega o contexto do usuário à sessão. Os avatares são procurados no arquivo `.face` do usuário, no local de ícones do AccountsService ou na entrada `Icon=` declarada. `argvus-accounts` pode criar uma imagem `.face` validada; o greeter não edita avatares.
 
@@ -60,8 +60,8 @@ A sessão padrão é definida por `[session] default` em `/etc/argvus/greeter.to
 
 ## Perfis de shell de login
 
-O greetd é configurado com `source_profile = false` em `/etc/greetd/config.toml`. Assim, a sessão escolhida inicia diretamente pelo seu arquivo `.desktop`: `~/.profile`, `~/.zprofile` e arquivos semelhantes não são lidos nas sessões do greeter. Um perfil que inicia uma sessão de TTY, como `exec argvus-tty` na VT1, não consegue substituir a sessão escolhida no greeter. Variáveis de ambiente definidas apenas nesses arquivos não ficam disponíveis nas sessões do greeter; para serviços de usuário do systemd, defina-as em `~/.config/environment.d/`, ou no próprio arquivo `.desktop` da sessão.
+O greetd é configurado com `source_profile = false` em `/etc/greetd/config.toml`. Assim, a sessão escolhida inicia diretamente pelo seu arquivo `.desktop`: `~/.profile`, `~/.zprofile` e arquivos semelhantes não são lidos nas sessões do greeter. Um perfil que inicia uma sessão de TTY, como `exec argvus --start-desktop` na VT1, não consegue substituir a sessão escolhida no greeter. Variáveis de ambiente definidas apenas nesses arquivos não ficam disponíveis nas sessões do greeter; para serviços de usuário do systemd, defina-as em `~/.config/environment.d/`, ou no próprio arquivo `.desktop` da sessão.
 
-`sudo argvus-greeter-setup` instala essa configuração. Pacotes gerados antes desta mudança mantêm a configuração anterior do greetd até que o helper de configuração seja executado novamente.
+`sudo argvus greeter-setup` instala essa configuração. Ao atualizar o pacote, a scriptlet executa `argvus greeter-setup --migrate-paths` automaticamente: ele reescreve apenas as linhas de inicialização legadas exatas em `/etc/greetd/config.toml` e `/etc/argvus/hyprland-argvus-greeter.{lua,conf}`, e mantém um backup datado de cada arquivo alterado. As demais linhas não são tocadas.
 
 Greeter, overlay de carregamento da sessão e splash de boot são componentes separados.
