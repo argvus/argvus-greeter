@@ -6,16 +6,18 @@ set -eu
 # profile); the Rust binary remains responsible only for TUI behavior.
 # Disable Kitty tabs only for this login surface while preserving the user's
 # normal Kitty configuration and active ARGVUS theme.
-command -v argvus-tui-terminal >/dev/null 2>&1 || {
-  printf '%s\n' 'argvus-greeter-tui: argvus-tui-terminal is required' >&2
+ARGVUS_COMMANDS_DIR="${ARGVUS_COMMANDS_DIR:-/usr/lib/argvus/commands}"
+tui_terminal="$ARGVUS_COMMANDS_DIR/argvus-tui-terminal"
+[ -x "$tui_terminal" ] || {
+  printf '%s\n' "argvus-greeter-tui: $tui_terminal is required" >&2
   exit 127
 }
 
-argvus-tui-terminal \
+"$tui_terminal" \
   --class argvus-greeter \
   --term kitty \
   --profile greeter \
-  -- /usr/bin/argvus-greeter
+  -- "$ARGVUS_COMMANDS_DIR/argvus-greeter"
 status=$?
 
 exit "$status"

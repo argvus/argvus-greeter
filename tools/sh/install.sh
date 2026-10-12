@@ -17,7 +17,8 @@ set -eu
 # the distribution defaults used by the Arch package.
 PREFIX="${PREFIX:-/usr}"
 CONFIG_DIR="${CONFIG_DIR:-/etc/argvus}"
-BIN_DIR="$PREFIX/bin"
+# Private executables live in the commands directory, not on PATH.
+COMMANDS_DIR="$PREFIX/lib/argvus/commands"
 DOC_DIR="$PREFIX/share/doc/argvus-greeter"
 LICENSE_DIR="$PREFIX/share/licenses/argvus-greeter"
 
@@ -40,11 +41,11 @@ build() {
 install_files() {
 	# Binaries and wrappers are installed together because greetd invokes the
 	# session wrapper, which then invokes the TUI terminal launcher.
-	log "==> Installing binaries to $BIN_DIR"
-	install -Dm755 target/release/argvus-greeter "$BIN_DIR/argvus-greeter"
-	install -Dm755 packaging/greetd/argvus-greeter-setup "$BIN_DIR/argvus-greeter-setup"
-	install -Dm755 packaging/greetd/argvus-greeter-session "$BIN_DIR/argvus-greeter-session"
-	install -Dm755 packaging/greetd/argvus-greeter-tui "$BIN_DIR/argvus-greeter-tui"
+	log "==> Installing binaries to $COMMANDS_DIR"
+	install -Dm755 target/release/argvus-greeter "$COMMANDS_DIR/argvus-greeter"
+	install -Dm755 packaging/greetd/argvus-greeter-setup "$COMMANDS_DIR/argvus-greeter-setup"
+	install -Dm755 packaging/greetd/argvus-greeter-session "$COMMANDS_DIR/argvus-greeter-session"
+	install -Dm755 packaging/greetd/argvus-greeter-tui "$COMMANDS_DIR/argvus-greeter-tui"
 
 	log "==> Installing configuration to $CONFIG_DIR (existing files are overwritten)"
 	for file in greeter.toml hyprland-argvus-greeter.conf hyprland-argvus-greeter.lua; do
@@ -64,10 +65,10 @@ remove_files() {
 	# Removal is limited to paths owned by this project; unrelated greetd state
 	# and user configuration are intentionally left untouched.
 	log "==> Removing binaries"
-	rm -f "$BIN_DIR/argvus-greeter"
-	rm -f "$BIN_DIR/argvus-greeter-setup"
-	rm -f "$BIN_DIR/argvus-greeter-session"
-	rm -f "$BIN_DIR/argvus-greeter-tui"
+	rm -f "$COMMANDS_DIR/argvus-greeter"
+	rm -f "$COMMANDS_DIR/argvus-greeter-setup"
+	rm -f "$COMMANDS_DIR/argvus-greeter-session"
+	rm -f "$COMMANDS_DIR/argvus-greeter-tui"
 
 	log "==> Removing configuration"
 	for file in greeter.toml hyprland-argvus-greeter.conf hyprland-argvus-greeter.lua; do
@@ -115,7 +116,7 @@ needs_sudo() {
 	# Check every destination before escalating so the privileged phase is
 	# deterministic and does not partially install files.
 	[ "$(id -u)" -eq 0 ] && return 1
-	for dir in "$BIN_DIR" "$CONFIG_DIR" "$DOC_DIR" "$LICENSE_DIR"; do
+	for dir in "$COMMANDS_DIR" "$CONFIG_DIR" "$DOC_DIR" "$LICENSE_DIR"; do
 		if ! writable_ancestor "$dir"; then
 			return 0
 		fi

@@ -91,10 +91,10 @@ Notes:
 The Arch package installs:
 
 ```text
-/usr/bin/argvus-greeter
-/usr/bin/argvus-greeter-tui
-/usr/bin/argvus-greeter-setup
-/usr/bin/argvus-greeter-session
+/usr/lib/argvus/commands/argvus-greeter
+/usr/lib/argvus/commands/argvus-greeter-tui
+/usr/lib/argvus/commands/argvus-greeter-setup
+/usr/lib/argvus/commands/argvus-greeter-session
 /usr/lib/argvus/greeter/handoff
 /usr/lib/tmpfiles.d/argvus-greeter.conf
 /etc/argvus/greeter.toml

@@ -58,13 +58,13 @@ package() {
   cd "${pkgname}-${pkgver}"
 
   install -Dm755 "$(_cargo_target_dir)/release/${pkgname}" \
-    "${pkgdir}/usr/bin/${pkgname}"
+    "${pkgdir}/usr/lib/argvus/commands/${pkgname}"
   install -Dm755 packaging/greetd/argvus-greeter-setup \
-    "${pkgdir}/usr/bin/argvus-greeter-setup"
+    "${pkgdir}/usr/lib/argvus/commands/argvus-greeter-setup"
   install -Dm755 packaging/greetd/argvus-greeter-session \
-    "${pkgdir}/usr/bin/argvus-greeter-session"
+    "${pkgdir}/usr/lib/argvus/commands/argvus-greeter-session"
   install -Dm755 packaging/greetd/argvus-greeter-tui \
-    "${pkgdir}/usr/bin/argvus-greeter-tui"
+    "${pkgdir}/usr/lib/argvus/commands/argvus-greeter-tui"
 
   install -Dm644 packaging/greetd/greeter.toml \
     "${pkgdir}/etc/argvus/greeter.toml"

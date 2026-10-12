@@ -6,7 +6,7 @@ Environment.
 
 It is designed for Wayland and for Argvus' Hyprland-based desktop, while still
 discovering installed Wayland sessions instead of hardcoding a single session.
-The packaged launcher opens it through `argvus-tui-terminal` using Kitty's
+The packaged launcher opens it through `argvus tui-terminal` using Kitty's
 graphics protocol, preserving avatars while remaining navigable with arrows,
 Enter and Tab. Its colors and semantic controls follow the active ARGVUS theme
 for the currently selected account; the greeter does not render a wallpaper.
@@ -27,7 +27,7 @@ Screenshot placeholder.
 systemd
    -> greetd
    -> minimal Wayland compositor session
-   -> argvus-tui-terminal
+   -> argvus tui-terminal
    -> argvus-greeter
    -> Wayland layer-shell handoff spinner
    -> selected Wayland desktop session
@@ -41,7 +41,7 @@ interactive terminal, so backend messages cannot corrupt the TUI layout.
 ## Requirements
 
 - Rust 1.95 or newer
-- `argvus-tui-terminal` and Kitty graphics support
+- `argvus tui-terminal` and Kitty graphics support
 - greetd
 - A Wayland compositor suitable for running the greeter, such as Hyprland
 - `argvus-appearance` for the official ARGVUS TUI themes
@@ -59,7 +59,7 @@ The binary is produced at `target/release/argvus-greeter`.
 
 Expected package locations:
 
-- `/usr/bin/argvus-greeter`
+- `/usr/lib/argvus/commands/argvus-greeter`
 - `/etc/argvus/greeter.toml`
 - `/usr/share/argvus-greeter/`
 - `/usr/share/backgrounds/argvus/`
@@ -81,7 +81,7 @@ See:
 - `packaging/greetd/hyprland-argvus-greeter.lua`
 
 The example starts a dedicated minimal Hyprland instance for the greeter
-through `argvus-greeter-session` and does not start the user's normal Argvus
+through `/usr/lib/argvus/commands/argvus-greeter-session` and does not start the user's normal Argvus
 desktop configuration before authentication. The launcher clears VT1 and
 redirects compositor output to the greeter user's state directory, or to a
 per-UID fallback under `/tmp` when greetd does not provide a writable `HOME`, so
@@ -100,13 +100,13 @@ When installed from the Arch package, apply the Argvus greetd configuration
 with:
 
 ```sh
-sudo argvus-greeter-setup --enable
+sudo argvus greeter-setup --enable
 ```
 
 Use `--now` instead of `--enable` to restart `greetd.service` immediately.
 The helper backs up an existing `/etc/greetd/config.toml` before replacing it.
 If `/etc/greetd/config.toml` still points to `Hyprland --config ...conf`, run
-the helper again so greetd uses the packaged `argvus-greeter-session` + Lua
+the helper again so greetd uses the packaged `/usr/lib/argvus/commands/argvus-greeter-session` + Lua
 configuration. Older direct commands can leave terminal output visible while
 the graphical greeter starts.
 
@@ -115,7 +115,7 @@ To refresh the public pre-login theme projections manually without changing
 greetd configuration, run:
 
 ```sh
-sudo argvus-greeter-setup --sync-themes
+sudo argvus greeter-setup --sync-themes
 ```
 
 ## Configuration
@@ -176,8 +176,8 @@ Security details of the lookup:
 The preferred way inside Argvus is the account manager:
 
 ```sh
-argvus-accounts self avatar ~/Pictures/avatar.png   # own avatar, no privileges
-sudo argvus-accounts avatar alice photo.png         # another user, admin
+argvus accounts self avatar ~/Pictures/avatar.png   # own avatar, no privileges
+sudo argvus accounts avatar alice photo.png         # another user, admin
 ```
 
 As an administrator, the AccountsService locations also work and stay

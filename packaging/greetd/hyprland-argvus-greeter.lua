@@ -54,5 +54,5 @@ hl.config({
 hl.on("hyprland.start", function()
   -- Start through the terminal policy wrapper so Kitty inherits the active
   -- ARGVUS theme while applying the Greeter-only tab restrictions.
-  hl.exec_cmd("/usr/bin/argvus-greeter-tui")
+  hl.exec_cmd("/usr/lib/argvus/commands/argvus-greeter-tui")
 end)

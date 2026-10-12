@@ -8,7 +8,7 @@ description: Configure the ARGVUS greetd login interface.
 Its setup helper is `argvus-greeter-setup`. On an installed system, use:
 
 ```sh
-sudo argvus-greeter-setup --enable
+sudo argvus greeter-setup --enable
 ```
 
 Use `sudo argvus-greeter-setup --now` when greetd should be restarted immediately. The helper backs up an existing `/etc/greetd/config.toml` before installing the ARGVUS configuration. Use `argvus-greeter-setup --help` to inspect installed options.
@@ -18,10 +18,10 @@ The greeter reads local account metadata from `argvus-accounts`, authenticates t
 The system greeter configuration is `/etc/argvus/greeter.toml`. To refresh the public theme projections used before authentication without changing greetd configuration, run:
 
 ```sh
-sudo argvus-greeter-setup --sync-themes
+sudo argvus greeter-setup --sync-themes
 ```
 
-Before authentication, the greeter does not read the selected user's private home directory. Theme selection through ARGVUS appearance publishes the validated theme to `/var/lib/argvus/greeter/themes/<uid>` as an atomic, UID-owned projection. `argvus-greeter-setup --sync-themes` remains the administrative resynchronization command. The login TUI and the post-login handoff use that projection, including the optional accent in `<uid>.accent`; `.active-theme` and `.accent-color` remain compatibility fallbacks. If the selected theme is unavailable, the greeter uses the deterministic packaged `argvus-dark` fallback rather than failing.
+Before authentication, the greeter does not read the selected user's private home directory. Theme selection through ARGVUS appearance publishes the validated theme to `/var/lib/argvus/greeter/themes/<uid>` as an atomic, UID-owned projection. `argvus greeter-setup --sync-themes` remains the administrative resynchronization command. The login TUI and the post-login handoff use that projection, including the optional accent in `<uid>.accent`; `.active-theme` and `.accent-color` remain compatibility fallbacks. If the selected theme is unavailable, the greeter uses the deterministic packaged `argvus-dark` fallback rather than failing.
 
 The administrative `/etc/argvus/greeter.toml` independently controls the
 pre-login surface. Under `[appearance]`, use

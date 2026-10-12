@@ -60,13 +60,13 @@ package() {
   # Keep the payload layout identical to the local package recipe.
   cd "${pkgname}-${pkgver}"
 
-  install -Dm755 "target/release/${pkgname}" "${pkgdir}/usr/bin/${pkgname}"
+  install -Dm755 "target/release/${pkgname}" "${pkgdir}/usr/lib/argvus/commands/${pkgname}"
   install -Dm755 packaging/greetd/argvus-greeter-setup \
-    "${pkgdir}/usr/bin/argvus-greeter-setup"
+    "${pkgdir}/usr/lib/argvus/commands/argvus-greeter-setup"
   install -Dm755 packaging/greetd/argvus-greeter-session \
-    "${pkgdir}/usr/bin/argvus-greeter-session"
+    "${pkgdir}/usr/lib/argvus/commands/argvus-greeter-session"
   install -Dm755 packaging/greetd/argvus-greeter-tui \
-    "${pkgdir}/usr/bin/argvus-greeter-tui"
+    "${pkgdir}/usr/lib/argvus/commands/argvus-greeter-tui"
   install -Dm755 "target/release/argvus-greeter-handoff" \
     "${pkgdir}/usr/lib/argvus/greeter/handoff"
 

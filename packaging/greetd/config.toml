@@ -5,7 +5,7 @@
 # Sessions chosen in the greeter must start exactly as their desktop file
 # declares. With source_profile enabled, greetd runs each session through the
 # user's login shell, so a ~/.zprofile or ~/.profile that starts a TTY launcher
-# on VT1 (for example `exec argvus-tty`) replaces the selected desktop.
+# on VT1 (for example `exec argvus tty`) replaces the selected desktop.
 source_profile = false
 
 [terminal]
@@ -15,5 +15,5 @@ vt = 1
 
 [default_session]
 # The unprivileged greeter account limits the pre-authentication process.
-command = "argvus-greeter-session"
+command = "/usr/lib/argvus/commands/argvus-greeter-session"
 user = "greeter"

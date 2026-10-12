@@ -1,6 +1,6 @@
 [package]
 # The package exposes one intentionally narrow executable: the greetd-facing
-# TUI login process installed as /usr/bin/argvus-greeter.
+# TUI login process installed as /usr/lib/argvus/commands/argvus-greeter.
 name = "argvus-greeter"
 version.workspace = true
 edition.workspace = true
